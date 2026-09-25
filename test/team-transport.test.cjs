@@ -479,7 +479,20 @@ test('relayed encrypted teammate actions pass SQLite trust, approval, and local 
     update: (decision) => ({ ...held, decision })
   });
   assert.equal(approved.entry.decision, 'approved');
+  assert.equal(approved.dispatched, true);
   assert.equal(dispatchedTasks.length, 1);
+  const duplicateApproval = decidePendingEntry({
+    entry: approved.entry, decision: 'approved', dispatch: () => { dispatchedTasks.push(received[0].outcome); return true; },
+    update: (decision) => ({ ...approved.entry, decision })
+  });
+  assert.equal(duplicateApproval.dispatched, false, 'an already-approved request cannot dispatch twice');
+  assert.equal(dispatchedTasks.length, 1);
+
+  const beforeRequestOnlySteer = steered.length;
+  await assert.rejects(send('relayed-request-only-steer', 'agent-prompt', {
+    agentId: 'agent-build', prompt: 'Request-only access must not steer agents.'
+  }), /rejected/);
+  assert.equal(steered.length, beforeRequestOnlySteer, 'task-request access cannot steer a local agent');
 
   store.upsertTrustedTeamMember({
     officeId: sharedOfficeId, memberId: teammate.deviceId, displayName: 'Teammate',
@@ -510,6 +523,14 @@ test('relayed encrypted teammate actions pass SQLite trust, approval, and local 
   }), /rejected/);
   assert.equal(ptyWrites.length, writesBeforeDeniedInput, 'downgraded access cannot write to the PTY');
   assert.match(String(received.at(-1).error), /not allowed for this member/);
+
+  assert.equal(store.revokeTrustedTeamMember(sharedOfficeId, teammate.deviceId), true);
+  const writesBeforeRevokedPrompt = steered.length;
+  await assert.rejects(send('relayed-revoked-agent-prompt', 'agent-prompt', {
+    agentId: 'agent-build', prompt: 'Revoked peers must not steer agents.'
+  }), /rejected/);
+  assert.equal(steered.length, writesBeforeRevokedPrompt, 'SQLite revocation prevents subsequent remote agent control');
+  assert.match(String(received.at(-1).error), /not a trusted member/);
 });
 
 test('transport validates signing key pairing and closes idempotently', async () => {
