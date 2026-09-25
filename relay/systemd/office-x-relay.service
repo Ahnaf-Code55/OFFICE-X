@@ -1,0 +1,47 @@
+[Unit]
+Description=OFFICE-X Circuit Relay v2 host
+Documentation=https://github.com/Ahnaf-Code55/OQVIAN/tree/main/OFFICE-X/relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=office-x-relay
+Group=office-x-relay
+WorkingDirectory=/opt/office-x-relay
+EnvironmentFile=/etc/office-x-relay/relay.env
+ExecStart=/usr/bin/node /opt/office-x-relay/server.mjs
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+KillSignal=SIGTERM
+UMask=0077
+
+# The relay needs network sockets and write access only to its persistent identity directory.
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/office-x-relay
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Bound resource use for a small self-hosted relay.
+LimitNOFILE=8192
+TasksMax=256
+MemoryMax=512M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

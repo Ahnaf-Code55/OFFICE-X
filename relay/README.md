@@ -53,6 +53,53 @@ traffic. Use a separate external probe and an actual client-to-client relay
 check before relying on a deployment. `docker compose ps` and `docker compose
 logs` show local container health and startup addresses.
 
+### Deploy with systemd (without Docker)
+
+Use this option on a Linux host with systemd and Node.js 22. The relay has no
+database; its only persistent state is the private identity key. Install the
+service files from a checked-out OFFICE-X tree:
+
+```sh
+sudo useradd --system --user-group --home-dir /var/lib/office-x-relay --create-home \
+  --shell /usr/sbin/nologin office-x-relay
+sudo install -d -o root -g root -m 0755 /opt/office-x-relay
+sudo install -d -o office-x-relay -g office-x-relay -m 0700 /var/lib/office-x-relay
+sudo install -d -o root -g root -m 0755 /etc/office-x-relay
+sudo install -o root -g root -m 0644 relay/server.mjs relay/package.json \
+  relay/package-lock.json /opt/office-x-relay/
+(cd /opt/office-x-relay && sudo npm ci --omit=dev --ignore-scripts)
+sudo install -o root -g root -m 0644 relay/systemd/office-x-relay.service \
+  /etc/systemd/system/office-x-relay.service
+sudo install -o root -g root -m 0600 relay/systemd/relay.env.example \
+  /etc/office-x-relay/relay.env
+sudoedit /etc/office-x-relay/relay.env
+```
+
+Set the real DNS name in `OFFICEX_RELAY_ANNOUNCE_MULTIADDRS` and make sure
+`/usr/bin/node` is Node.js 22 (adjust `ExecStart` in the unit if Node is
+installed elsewhere). The sample binds native TCP on port 4001 and binds plain
+WebSocket on loopback port 4002. Put a TLS reverse proxy such as Caddy in front
+of port 4002, publish only its HTTPS/WSS port, and open port 4001 only if native
+TCP clients need it. The TLS proxy and firewall are separate host configuration
+and are not changed by this service.
+
+Then start the service and inspect its generated Peer ID:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now office-x-relay
+sudo systemctl status office-x-relay --no-pager
+sudo journalctl -u office-x-relay -n 50 --no-pager
+```
+
+Configure each OFFICE-X installation with the same relay multiaddr, including
+the Peer ID printed in the journal. Keep `/var/lib/office-x-relay` and its
+backups private. The identity key is not encrypted at rest; losing it changes
+the Peer ID and requires updating every client. Validate external DNS, the TLS
+proxy, firewall reachability, a relay reservation, and an actual connection
+between two separate devices before relying on the service. A green
+`systemctl status` confirms only that the process is running.
+
 Default listeners are `/ip4/0.0.0.0/tcp/4001` and `/ip4/0.0.0.0/tcp/4002/ws`. The host prints its Peer ID and listening multiaddrs, then shuts down on `SIGINT` or `SIGTERM`.
 
 Set these environment variables to configure the host:
