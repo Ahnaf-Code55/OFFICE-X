@@ -21,7 +21,7 @@ export type UpdateStatus =
    *  `notes` is the release body — the notify-only poll already reads the same
    *  `releases/latest` JSON that carries it, so the toast can show "what's new"
    *  here too without a second request. */
-  | { state: 'available-manual'; version: string; url: string; reason?: string; notes?: string;
+  | { state: 'available-manual'; version: string; url?: string; reason?: string; notes?: string;
       /** Direct asset for THIS platform/arch, when the release has one. The
        *  modal's primary button downloads it; without it the button falls back
        *  to the releases page. */
@@ -33,19 +33,6 @@ export type UpdateStatus =
 
 export type UpdateAction = 'none' | 'check' | 'download' | 'restart' | 'open-release' | 'manual';
 
-export const REPO = 'chaitanyagiri/munder-difflin';
-
-/** The installer for THIS machine in the release tagged v{version}, by the
- *  names electron-builder.yml produces. Used when a status carries no
- *  `downloadUrl` of its own (the native updater path never does). */
-export function installerUrl(version: string, platform: string, arch: string): string {
-  const v = version.replace(/^v/, '');
-  const file = platform === 'darwin' ? `Munder-Difflin-${v}-mac-${arch}.dmg`
-    : platform === 'win32' ? `Munder-Difflin-${v}-win-x64-setup.exe`
-    : `Munder-Difflin-${v}-linux-x86_64.AppImage`;
-  return `https://github.com/${REPO}/releases/download/v${v}/${file}`;
-}
-
 /** The newer release a status knows about, or null. Every state that names a
  *  version newer than the running one counts, whatever the updater is doing
  *  with it: the manual path is always on offer. */
@@ -55,12 +42,10 @@ export function pendingVersion(status: UpdateStatus | null, current: string): st
   return isNewer(status.version, current) ? status.version : null;
 }
 
-/** Where a manual download of `status`'s release goes: the asset the release
- *  itself named when it did, else the conventional installer URL. */
-export function manualDownloadUrl(status: UpdateStatus, platform: string, arch: string): string | null {
-  if (!('version' in status) || status.state === 'just-updated') return null;
-  if (status.state === 'available-manual' && status.downloadUrl) return status.downloadUrl;
-  return installerUrl(status.version, platform, arch);
+/** Where this explicit release points. Never synthesize a URL from a version. */
+export function manualDownloadUrl(status: UpdateStatus, _platform: string, _arch: string): string | null {
+  if (status.state !== 'available-manual') return null;
+  return status.downloadUrl ?? status.url ?? null;
 }
 
 export interface UpdateBadgeView {
@@ -280,7 +265,7 @@ export function describeUpdateSettings(
     case 'downloaded':
       return {
         headline: `v${status.version} is ready to install`,
-        detail: `Restart Munder Difflin to finish updating from v${v}.`,
+        detail: `Restart OFFICE-X to finish updating from v${v}.`,
         button: 'Restart to update', action: 'restart', busy: false, tone: 'ready'
       };
     case 'available-manual':
@@ -327,7 +312,7 @@ export function manualInstallSteps(platform: string): { os: string; steps: strin
     return {
       os: 'macOS',
       steps: [
-        'Open the .dmg and drag Munder Difflin onto Applications. Choose Replace when asked.',
+        'Open the .dmg and drag OFFICE-X onto Applications. Choose Replace when asked.',
         'Quit this app, open the new one from Applications, and pick the same project.'
       ]
     };
@@ -337,7 +322,7 @@ export function manualInstallSteps(platform: string): { os: string; steps: strin
       os: 'Windows',
       steps: [
         'Quit this app, then run the downloaded setup .exe. It replaces the installed version.',
-        'Open Munder Difflin again and pick the same project.'
+        'Open OFFICE-X again and pick the same project.'
       ]
     };
   }

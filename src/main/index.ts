@@ -1,11 +1,11 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, cpSync, writeFileSync,
   unlinkSync, mkdirSync, renameSync, createWriteStream, copyFileSync, lstatSync,
   readlinkSync, symlinkSync
 } from 'node:fs';
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes, createHash, createPublicKey, timingSafeEqual } from 'node:crypto';
 import { join, resolve, sep, basename, dirname, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { request as httpsRequest } from 'node:https';
@@ -44,11 +44,16 @@ import {
   classifyInboundKind, isAutoAllowed,
   DEFAULT_CONTEXT_TRIGGER, DEFAULT_ORG_TRIGGER, DEFAULT_TRIGGER_MODE, DEFAULT_WEBHOOK_SCHEMA,
   type ContextRule, type ContextTriggerConfig, type InboundKind, type OrgTriggerConfig,
+  type OrgConnectionMode, type PeerControlLevel,
   type TriggerHistoryEntry, type TriggerMode, type WebhookTrigger
 } from '../shared/triggers';
+import { isTeamDeviceId, sealTeamMessage, type TeamMessage } from '../shared/teamProtocol';
+import { acceptIncomingTeamEnvelope } from './teamIngress';
+import { dispatchTeamAction } from './teamDispatch';
 import {
   appendTriggerHistory, clearTriggerHistory, listTriggerHistory, updateTriggerHistory
 } from './triggerHistory';
+import { decidePendingEntry } from './triggerHistoryDecision';
 import { transcribeWithGroq, DEFAULT_GROQ_MODEL } from './freeflow';
 import { registerRealtimeIpc } from './realtime';
 import { registerRealtimeActionIpc } from './realtimeActions';
@@ -60,6 +65,15 @@ import { analytics, isRendererMessageSurface } from './analytics';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
 import * as integrations from './integrations';
+import { ensureTeamIdentity } from './teamIdentity';
+import { TeamTerminalSendGuard, type TeamTerminalSendToken } from './teamTerminalSendGuard';
+import {
+  createTeamTransport, sendTeamPresenceWithRouteFallback, teamPeerIdFromSigningPublicKey,
+  TEAM_TERMINAL_BATCH_INTERVAL_MS, TEAM_TERMINAL_MAX_BATCH_CHARS, TEAM_TERMINAL_MAX_STREAMS_PER_PEER,
+  type TeamTransport
+} from './teamTransport';
+import { isPublicTeamRouteAddress, normalizePublicTeamEndpoint, resolveManagedRelayAddress, teamEndpointForPeer, teamListenAddressForEndpoint } from './teamRoute';
+import { parseTeamPresence, type TeamPresenceAgent, type TeamPresencePeer } from '../shared/teamPresence';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
 import { buildWorkerLaunch } from './workerLaunch';
@@ -68,7 +82,7 @@ import { WorkerWakeWatchdog, type WorkerWakeFacts } from './workerWake';
 import { inboxNudgeText } from '../shared/hiveNudge';
 import { resolveGodName } from '../shared/godIdentity';
 import { fetchHireManifest, readHireManifestFiles } from './hire';
-import { parseHireDeepLink, type HireManifest } from '../shared/hire';
+import { APP_PROTOCOL_SCHEME, parseHireDeepLink, type HireManifest } from '../shared/hire';
 import { ClosingTimeController } from './closingTime';
 import {
   argsWithAutoModeFlag,
@@ -92,6 +106,8 @@ import {
   codexRemoteSocketFits,
   withCodexRemoteArgs
 } from '../shared/codexRemote';
+
+declare const __OFFICE_X_MANAGED_RELAY_MULTIADDR__: string;
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
@@ -336,6 +352,30 @@ const reflector = new MemoryReflector(
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
 const persist = new PersistStore();
+let teamTransport: TeamTransport | null = null;
+let teamTransportError = '';
+let teamTransportRevision = 0;
+let teamTransportReconcilePromise: Promise<void> | null = null;
+let teamTransportReconcileAgain = false;
+let teamPresenceTimer: ReturnType<typeof setInterval> | null = null;
+let localPresenceSendTimer: ReturnType<typeof setTimeout> | null = null;
+let lastLocalPresenceSentAt = 0;
+let localTeamPresenceAgents: TeamPresenceAgent[] = [];
+const remoteTeamPresence = new Map<string, TeamPresencePeer>();
+const remoteTeamPresenceSeenAt = new Map<string, number>();
+const teamPeerIdCache = new Map<string, Promise<string>>();
+// Terminal output is sensitive, so a peer sees it only after the local owner
+// explicitly enables sharing for that peer and agent. Buffers are memory-only.
+const teamTerminalShares = new Map<string, Set<string>>();
+const teamTerminalPending = new Map<string, { memberId: string; agentId: string; output: string; gap: boolean }>();
+const teamTerminalSending = new TeamTerminalSendGuard();
+const teamTerminalDropped = new Set<string>();
+const teamTerminalSequence = new Map<string, number>();
+const teamTerminalStreamIds = new Map<string, string>();
+const teamTerminalLastReceived = new Map<string, { streamId: string; sequence: number }>();
+let teamTerminalFlushTimer: ReturnType<typeof setTimeout> | null = null;
+const MAX_SHARED_TERMINALS_PER_PEER = TEAM_TERMINAL_MAX_STREAMS_PER_PEER;
+const MAX_SHARED_TERMINALS_TOTAL = 32;
 /** The PRIMARY window — the one running the hive/god orchestration and the sink
  *  for process-global timer events (missions, breaker, Slack ingestion). It is
  *  the most-recently-focused live window, so global events follow the user.
@@ -2167,7 +2207,7 @@ function floorCascade(): WindowBounds | null {
   return clampBounds({ x: b.x + OFFSET, y: b.y + OFFSET, width: b.width, height: b.height });
 }
 
-// ─── Shareable hires: munderdifflin:// deep link + file import ──────────────
+// ─── Shareable hires: officex:// deep link + file import ───────────────────
 // A hire manifest NEVER auto-spawns: it is validated, then handed to the
 // renderer, which pre-fills the Add-Agent modal for human review. See
 // src/shared/hire.ts for the spec + security model.
@@ -2212,10 +2252,10 @@ async function handleHireLink(link: string): Promise<void> {
 // exe+args form or the registration points at electron.exe with no entry.
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('munderdifflin', process.execPath, [resolve(process.argv[1])]);
+    app.setAsDefaultProtocolClient(APP_PROTOCOL_SCHEME, process.execPath, [resolve(process.argv[1])]);
   }
 } else {
-  app.setAsDefaultProtocolClient('munderdifflin');
+  app.setAsDefaultProtocolClient(APP_PROTOCOL_SCHEME);
 }
 
 // Deep links on Windows/Linux arrive as the argv of a SECOND process — take the
@@ -2232,7 +2272,7 @@ if (!gotInstanceLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
-    const link = argv.find((a) => a.startsWith('munderdifflin://'));
+    const link = argv.find((a) => a.startsWith(`${APP_PROTOCOL_SCHEME}://`));
     if (link) void handleHireLink(link);
   });
 }
@@ -2292,7 +2332,7 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
     ...(geom && geom.x !== undefined && geom.y !== undefined ? { x: geom.x, y: geom.y } : {}),
     minWidth: MIN_WIN.width,
     minHeight: MIN_WIN.height,
-    title: isFloor ? 'Munder Difflin — Floor' : 'Munder Difflin',
+    title: isFloor ? 'OFFICE-X — Floor' : 'OFFICE-X',
     backgroundColor: '#FFF8E7',
     titleBarStyle: 'hiddenInset',
     show: false,
@@ -3714,7 +3754,16 @@ ipcMain.handle('dialog:attachFiles', async (evt) => {
 // clipboard holds no image (e.g. a normal text paste).
 ipcMain.handle('clipboard:saveImage', async () => {
   try {
-    const img = clipboard.readImage();
+    const items = await clipboard.read();
+    let img = nativeImage.createEmpty();
+    for (const item of items) {
+      const imageType = item.types.find((type) => type.startsWith('image/'));
+      if (!imageType) continue;
+      const imageBlob = await item.getType(imageType);
+      if (!(imageBlob instanceof Blob)) continue;
+      img = nativeImage.createFromBuffer(Buffer.from(await imageBlob.arrayBuffer()));
+      if (!img.isEmpty()) break;
+    }
     if (img.isEmpty()) return { ok: false as const, error: 'no image in clipboard' };
     const dir = join(app.getPath('temp'), 'cth-pastes');
     mkdirSync(dir, { recursive: true });
@@ -3749,6 +3798,13 @@ ipcMain.handle('history:search', (_evt, query: unknown, limit: unknown) =>
  *  and the closing-time conclusion (after the god confirmed the floor saved). */
 function teardownAndQuit(): void {
   allowQuit = true;
+  if (teamPresenceTimer) clearInterval(teamPresenceTimer);
+  teamPresenceTimer = null;
+  if (localPresenceSendTimer) clearTimeout(localPresenceSendTimer);
+  localPresenceSendTimer = null;
+  const transport = teamTransport;
+  teamTransport = null;
+  void transport?.close().catch(() => undefined);
   // Each teardown step is best-effort: a throw here (e.g. a dying child or a
   // half-torn-down socket) must never abort the quit or pop a crash dialog.
   try { clearMissionTimers(); } catch (e) { console.error('[quit] clearMissionTimers:', e); }
@@ -4234,20 +4290,947 @@ function isTriggerMode(v: unknown): v is TriggerMode {
   return v === 'strict' || v === 'allow-all' || v === 'communication-only';
 }
 
-// ─── IPC: Triggers — organisation (persistence only; no transport yet) ──────
-ipcMain.handle('org:getTrigger', () => readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER);
-ipcMain.handle('org:setTrigger', (_evt, arg: unknown) => {
+function isOrgConnectionMode(v: unknown): v is OrgConnectionMode {
+  return v === 'managed-relay' || v === 'peer-to-peer' || v === 'self-hosted';
+}
+
+function isPeerControlLevel(v: unknown): v is PeerControlLevel {
+  return v === 'task-requests' || v === 'delegated' || v === 'full-control';
+}
+
+function normalizeTeamId(value: unknown, fallback: string): string {
+  return typeof value === 'string' && /^[A-Za-z0-9_.:-]{0,160}$/.test(value) ? value : fallback;
+}
+
+function normalizeDeviceId(value: unknown, fallback: string): string {
+  return value === '' ? '' : isTeamDeviceId(value) ? value : fallback;
+}
+
+function normalizePeerControlLevels(value: unknown): Record<string, PeerControlLevel> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return Object.create(null) as Record<string, PeerControlLevel>;
+  const levels = Object.create(null) as Record<string, PeerControlLevel>;
+  for (const [peerId, level] of Object.entries(value).slice(0, 256)) {
+    if (peerId !== '__proto__' && peerId !== 'constructor' && peerId !== 'prototype'
+      && /^[A-Za-z0-9_-]{1,128}$/.test(peerId) && isPeerControlLevel(level)) {
+      levels[peerId] = level;
+    }
+  }
+  return levels;
+}
+
+function normalizeTeamEndpoint(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const raw = value.trim();
+  if (!raw) return '';
+  if (raw.length > 2048 || !raw.startsWith('/') || /[\u0000-\u0020\u007f]/.test(raw)) return '';
+  return raw;
+}
+
+function normalizeTeamRoute(value: unknown, expectedPeerId?: string): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string' || value.length > 2048 || !value.startsWith('/')
+    || /[\u0000-\u0020\u007f]/.test(value)) throw new Error('invalid teammate multiaddr');
+  const parts = value.slice(1).split('/');
+  const addresses: string[] = [];
+  let terminalPeerId = '';
+  for (let i = 0; i < parts.length;) {
+    const protocol = parts[i++];
+    if (protocol === 'p2p-circuit' || protocol === 'quic-v1') continue;
+    const component = parts[i++];
+    if (!component) throw new Error('invalid teammate multiaddr');
+    if (protocol === 'ip4' || protocol === 'ip6') {
+      if (!isPublicTeamRouteAddress(component)) throw new Error('invite route must use a public IP address');
+      addresses.push(component);
+    } else if (protocol === 'tcp' || protocol === 'udp') {
+      if (!/^(?:[1-9]\d{0,4})$/.test(component) || Number(component) > 65535) throw new Error('invalid teammate multiaddr port');
+    } else if (protocol === 'p2p') {
+      terminalPeerId = component;
+    } else {
+      // In particular, disallow DNS names and resolver-dependent routes.
+      throw new Error('invite route must use literal public IP multiaddrs');
+    }
+  }
+  if (!addresses.length || !terminalPeerId || (expectedPeerId && terminalPeerId !== expectedPeerId)) {
+    throw new Error('invite route does not match the teammate identity');
+  }
+  return value;
+}
+
+// ─── IPC: Triggers — organisation identity, presence and trusted members ────
+const ORG_API_KEY_SECRET_REF = 'officex.team.relay-credential.v1';
+
+function publishRemoteTeamPresence(): void {
+  const snapshot = parseTeamPresence([...remoteTeamPresence.values()].slice(0, 8));
+  for (const win of allWindows) {
+    if (!win.isDestroyed()) win.webContents.send('org:presence', snapshot);
+  }
+}
+
+function expireRemoteTeamPresence(now = Date.now()): void {
+  let changed = false;
+  for (const [memberId, seenAt] of remoteTeamPresenceSeenAt) {
+    if (now - seenAt <= 45_000) continue;
+    remoteTeamPresenceSeenAt.delete(memberId);
+    remoteTeamPresence.delete(memberId);
+    changed = true;
+  }
+  if (changed) publishRemoteTeamPresence();
+}
+
+function isRemoteTeamMemberOnline(memberId: string, now = Date.now()): boolean {
+  const seenAt = remoteTeamPresenceSeenAt.get(memberId);
+  return seenAt !== undefined && now - seenAt <= 45_000 && remoteTeamPresence.has(memberId);
+}
+
+function teamRelayAddress(cfg: OrgTriggerConfig): string {
+  if (cfg.connectionMode === 'self-hosted') return cfg.selfHostedEndpoint;
+  if (cfg.connectionMode === 'managed-relay') {
+    const runtimeDefault = process.env.OFFICE_X_MANAGED_RELAY_MULTIADDR;
+    const releaseDefault = typeof __OFFICE_X_MANAGED_RELAY_MULTIADDR__ === 'string'
+      ? __OFFICE_X_MANAGED_RELAY_MULTIADDR__
+      : '';
+    return resolveManagedRelayAddress(cfg.managedRelayEndpoint, runtimeDefault || releaseDefault);
+  }
+  return '';
+}
+
+async function isTrustedTransportPeer(peerId: string, memberId: string, officeId: string): Promise<boolean> {
+  if (!persist.isOpen || !peerId || !isTeamDeviceId(memberId)) return false;
+  const member = persist.getTrustedTeamMember(officeId, memberId);
+  if (!member) return false;
+  let peerIdPromise = teamPeerIdCache.get(member.signingPublicKey);
+  if (!peerIdPromise) {
+    peerIdPromise = teamPeerIdFromSigningPublicKey(member.signingPublicKey).catch((error) => {
+      teamPeerIdCache.delete(member.signingPublicKey);
+      throw error;
+    });
+    teamPeerIdCache.set(member.signingPublicKey, peerIdPromise);
+  }
+  try {
+    if (await peerIdPromise !== peerId) return false;
+    // Re-read after the asynchronous identity derivation so an in-flight
+    // authorization cannot outlive a revoke or key rotation.
+    const current = persist.getTrustedTeamMember(officeId, memberId);
+    return !!current && current.signingPublicKey === member.signingPublicKey;
+  }
+  catch { return false; }
+}
+
+function dispatchTeamMessage(message: TeamMessage, peerId: string): void {
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  const member = cfg.officeId ? persist.getTrustedTeamMember(cfg.officeId, peerId) : undefined;
+  if (!member || member.memberId !== message.senderId || message.officeId !== cfg.officeId) {
+    throw new Error('teammate trust changed before dispatch');
+  }
+  const registry = hive.registry();
+  const outcome = dispatchTeamAction({
+    message,
+    member,
+    triggerMode: cfg.mode,
+    targets: Object.entries(registry.agents).map(([id, agent]) => ({ ...agent, id })),
+    hasTerminal: (agentId) => !!ptyForAgent(agentId),
+    dispatchTaskRequest: ({ title, message: body }) => {
+      const taskId = `org-${randomBytes(8).toString('hex')}`;
+      return dispatchWebhookWork({ taskId, title, message: body, origin: 'org' });
+    },
+    steerAgent: (agentId, prompt) => {
+      control.steer(agentId, `[Shared office message from ${member.displayName}]:\n${prompt}`);
+    },
+    writeTerminal: (agentId, input) => {
+      const ptyId = ptyForAgent(agentId);
+      if (!ptyId || !ptyManager.write(ptyId, input)) throw new Error('could not send input to teammate target');
+    },
+    receiveTerminalStream: (command) => {
+      const remote = remoteTeamPresence.get(member.memberId);
+      const agent = remote?.agents.find((item) => item.id === command.agentId);
+      if (!agent) throw new Error('teammate terminal stream target is not in current presence');
+      const key = `${member.memberId}\u0000${command.agentId}`;
+      const previous = teamTerminalLastReceived.get(key);
+      if (previous?.streamId === command.streamId && command.sequence <= previous.sequence) return;
+      teamTerminalLastReceived.set(key, { streamId: command.streamId, sequence: command.sequence });
+      const payload = {
+        memberId: member.memberId, memberName: member.displayName,
+        agentId: agent.id, agentName: agent.name, output: command.output,
+        sequence: command.sequence,
+        gap: command.gap || (previous?.streamId === command.streamId && command.sequence !== previous.sequence + 1)
+      };
+      for (const win of allWindows) {
+        if (!win.isDestroyed()) win.webContents.send('org:terminalOutput', payload);
+      }
+    }
+  });
+  if (outcome.type === 'terminal-stream') return;
+  const entry = (input: { title?: string; body: string; kind: InboundKind; decision?: 'pending' | 'auto-allowed' }) => appendTriggerHistory({
+    source: 'org', sourceId: member.memberId, sourceName: member.displayName, direction: 'inbound',
+    peer: member.displayName, title: input.title, body: input.body, kind: input.kind,
+    decision: input.decision, correlationId: message.id
+  });
+  if (outcome.type === 'task-request') {
+    entry({ title: outcome.title, body: outcome.message, kind: 'directive', decision: outcome.decision });
+  } else if (outcome.type === 'agent-prompt') {
+    const agent = registry.agents[outcome.agentId];
+    if (!agent) throw new Error('teammate target agent is unavailable');
+    entry({ title: `Steer ${agent.name}`, body: outcome.prompt, kind: 'directive', decision: outcome.decision });
+  } else {
+    const agent = registry.agents[outcome.agentId];
+    if (!agent) throw new Error('teammate target terminal is unavailable');
+    entry({ title: `Terminal input · ${agent.name}`, body: outcome.input, kind: 'directive', decision: outcome.decision });
+  }
+  notifyTriggerHistoryUpdated();
+}
+
+async function sendTeamMessage(memberId: string, action: 'task-request' | 'agent-prompt' | 'terminal-input', body: Record<string, unknown>): Promise<void> {
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  if (!cfg.enabled || !cfg.officeId || !teamTransport || !persist.isOpen) throw new Error('shared office transport is not ready');
+  const member = persist.getTrustedTeamMember(cfg.officeId, memberId);
+  if (!member) throw new Error('teammate is not trusted in this office');
+  const local = ensureTeamIdentity(integrations, cfg.deviceId || `device-${randomBytes(8).toString('hex')}`);
+  if (!local.ok) throw new Error(local.error);
+  const issuedAt = Date.now();
+  const message: TeamMessage = {
+    id: randomBytes(16).toString('hex'), officeId: cfg.officeId, senderId: local.identity.deviceId,
+    recipientId: member.memberId, action, body, issuedAt, expiresAt: issuedAt + 10 * 60_000
+  };
+  const envelope = sealTeamMessage({ message, sender: local.identity, recipientEncryptionPublicKey: member.encryptionPublicKey });
+  const peerId = await teamPeerIdFromSigningPublicKey(member.signingPublicKey);
+  if (!await isTrustedTransportPeer(peerId, member.memberId, cfg.officeId)) throw new Error('teammate trust changed before send');
+  const relay = teamRelayAddress(cfg).replace(/\/$/, '');
+  const routes: Array<string | undefined> = [];
+  if (member.directEndpoint) routes.push(member.directEndpoint);
+  if (relay) {
+    const relayRoute = `${relay}/p2p-circuit/p2p/${peerId}`;
+    if (!routes.includes(relayRoute)) routes.push(relayRoute);
+  }
+  if (!routes.length) routes.push(undefined);
+  let lastError: unknown;
+  for (const route of routes) {
+    try {
+      await teamTransport.sendMessage({ peerId, memberId, ...(route ? { multiaddr: route } : {}) }, envelope);
+      lastError = undefined;
+      break;
+    } catch (error) { lastError = error; }
+  }
+  if (lastError) throw lastError;
+  appendTriggerHistory({ source: 'org', sourceId: member.memberId, sourceName: member.displayName,
+    direction: 'outbound', peer: member.displayName,
+    title: action === 'task-request' ? String(body.title ?? 'Task request') : action === 'agent-prompt' ? 'Agent prompt' : 'Terminal input',
+    body: action === 'task-request' ? String(body.message ?? '') : action === 'agent-prompt' ? String(body.prompt ?? '') : String(body.input ?? ''),
+    kind: 'directive', decision: 'auto-allowed', correlationId: message.id });
+  notifyTriggerHistoryUpdated();
+}
+
+function teamTerminalStreamKeys(): Set<string> {
+  const keys = new Set<string>([
+    ...teamTerminalPending.keys(), ...teamTerminalDropped,
+    ...teamTerminalSequence.keys(), ...teamTerminalStreamIds.keys(),
+    ...teamTerminalSending.activeKeys()
+  ]);
+  for (const [memberId, agentIds] of teamTerminalShares) {
+    for (const agentId of agentIds) keys.add(`${memberId}\u0000${agentId}`);
+  }
+  return keys;
+}
+
+function invalidateTeamTerminalStream(key: string): void {
+  teamTerminalSending.invalidate(key);
+  teamTerminalPending.delete(key);
+  teamTerminalDropped.delete(key);
+  teamTerminalSequence.delete(key);
+  teamTerminalStreamIds.delete(key);
+}
+
+function invalidateTeamTerminalStreamsForMember(memberId: string): void {
+  const prefix = `${memberId}\u0000`;
+  for (const key of teamTerminalStreamKeys()) {
+    if (key.startsWith(prefix)) invalidateTeamTerminalStream(key);
+  }
+  teamTerminalShares.delete(memberId);
+}
+
+function clearTeamTerminalSharing(): void {
+  for (const key of teamTerminalStreamKeys()) invalidateTeamTerminalStream(key);
+  teamTerminalShares.clear();
+  teamTerminalPending.clear();
+  teamTerminalDropped.clear();
+  teamTerminalSequence.clear();
+  teamTerminalStreamIds.clear();
+}
+
+function isTeamTerminalBatchAuthorized(input: {
+  memberId: string;
+  agentId: string;
+  officeId: string;
+  transport: TeamTransport;
+  token: TeamTerminalSendToken;
+  expectedSigningPublicKey: string;
+  expectedEncryptionPublicKey: string;
+}): boolean {
+  const { memberId, agentId, officeId, transport, token, expectedSigningPublicKey, expectedEncryptionPublicKey } = input;
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  const member = persist.isOpen ? persist.getTrustedTeamMember(officeId, memberId) : undefined;
+  return teamTerminalSending.isCurrent(token)
+    && teamTerminalShares.get(memberId)?.has(agentId) === true
+    && cfg.enabled && cfg.officeId === officeId && teamTransport === transport
+    && member?.controlLevel === 'full-control'
+    && member.signingPublicKey === expectedSigningPublicKey
+    && member.encryptionPublicKey === expectedEncryptionPublicKey;
+}
+
+function queueTeamTerminalOutput(ptyId: string, data: string): void {
+  const agentId = ptyToAgent.get(ptyId);
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  if (!agentId || !cfg.enabled || !cfg.officeId || !teamTransport || !persist.isOpen) return;
+  for (const [memberId, agentIds] of teamTerminalShares) {
+    if (!agentIds.has(agentId)) continue;
+    const member = persist.getTrustedTeamMember(cfg.officeId, memberId);
+    if (!member || member.controlLevel !== 'full-control') continue;
+    const key = `${memberId}\u0000${agentId}`;
+    const previous = teamTerminalPending.get(key);
+    if (!previous && teamTerminalPending.size >= MAX_SHARED_TERMINALS_TOTAL) { teamTerminalDropped.add(key); continue; }
+    const combined = `${previous?.output ?? ''}${data}`;
+    const truncated = combined.length > TEAM_TERMINAL_MAX_BATCH_CHARS;
+    const dropped = teamTerminalDropped.delete(key);
+    teamTerminalPending.set(key, { memberId, agentId, output: combined.slice(-TEAM_TERMINAL_MAX_BATCH_CHARS),
+      gap: !!previous?.gap || truncated || dropped });
+  }
+  if (teamTerminalPending.size && !teamTerminalFlushTimer) {
+    teamTerminalFlushTimer = setTimeout(() => { teamTerminalFlushTimer = null; flushTeamTerminalOutput(); }, TEAM_TERMINAL_BATCH_INTERVAL_MS);
+    teamTerminalFlushTimer.unref?.();
+  }
+}
+
+function flushTeamTerminalOutput(): void {
+  for (const [key, item] of [...teamTerminalPending]) {
+    const token = teamTerminalSending.begin(key);
+    if (!token) continue;
+    teamTerminalPending.delete(key);
+    const sequenceKey = `${item.memberId}\u0000${item.agentId}`;
+    const sequence = (teamTerminalSequence.get(sequenceKey) ?? 0) + 1;
+    teamTerminalSequence.set(sequenceKey, sequence);
+    let streamId = teamTerminalStreamIds.get(sequenceKey);
+    if (!streamId) { streamId = randomBytes(8).toString('hex'); teamTerminalStreamIds.set(sequenceKey, streamId); }
+    void sendTeamTerminalOutput(item.memberId, item.agentId, item.output, sequence, streamId, item.gap, token)
+      .catch(() => {
+        if (!teamTerminalSending.isCurrent(token)) return;
+        // This frame was not delivered (including a transport rate rejection).
+        // Mark the next delivered batch so the read-only mirror can report loss.
+        teamTerminalDropped.add(key);
+        const pending = teamTerminalPending.get(key);
+        if (pending) pending.gap = true;
+      }) // a remote view is best-effort and never blocks the local PTY
+      .finally(() => {
+        teamTerminalSending.finish(token);
+        if (teamTerminalPending.size && !teamTerminalFlushTimer) {
+          teamTerminalFlushTimer = setTimeout(() => { teamTerminalFlushTimer = null; flushTeamTerminalOutput(); }, 25);
+          teamTerminalFlushTimer.unref?.();
+        }
+      });
+  }
+}
+
+async function sendTeamTerminalOutput(memberId: string, agentId: string, output: string, sequence: number,
+  streamId: string, gap: boolean, token: TeamTerminalSendToken): Promise<void> {
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  const transport = teamTransport;
+  const member = cfg.officeId && persist.isOpen ? persist.getTrustedTeamMember(cfg.officeId, memberId) : undefined;
+  if (!cfg.enabled || !cfg.officeId || !transport || !persist.isOpen || !member
+    || member.controlLevel !== 'full-control'
+    || !isTeamTerminalBatchAuthorized({ memberId, agentId, officeId: cfg.officeId, transport, token,
+      expectedSigningPublicKey: member.signingPublicKey, expectedEncryptionPublicKey: member.encryptionPublicKey })) return;
+  if (!isRemoteTeamMemberOnline(memberId)) return;
+  const local = ensureTeamIdentity(integrations, cfg.deviceId || `device-${randomBytes(8).toString('hex')}`);
+  if (!local.ok) return;
+  const agent = hive.registry().agents[agentId];
+  if (!agent || agent.archived || agent.isGod || agent.isAssistant || !ptyForAgent(agentId)) return;
+  const issuedAt = Date.now();
+  const message: TeamMessage = {
+    id: randomBytes(16).toString('hex'), officeId: cfg.officeId, senderId: local.identity.deviceId,
+    recipientId: member.memberId, action: 'terminal-stream',
+    body: { agentId, output, sequence, streamId, gap }, issuedAt, expiresAt: issuedAt + 60_000
+  };
+  const envelope = sealTeamMessage({ message, sender: local.identity, recipientEncryptionPublicKey: member.encryptionPublicKey });
+  const peerId = await teamPeerIdFromSigningPublicKey(member.signingPublicKey);
+  if (!await isTrustedTransportPeer(peerId, member.memberId, cfg.officeId)) return;
+  const canWrite = () => isTeamTerminalBatchAuthorized({ memberId, agentId, officeId: cfg.officeId, transport, token,
+    expectedSigningPublicKey: member.signingPublicKey, expectedEncryptionPublicKey: member.encryptionPublicKey });
+  if (!canWrite()) return;
+  const relay = teamRelayAddress(cfg).replace(/\/$/, '');
+  const routes: Array<string | undefined> = [];
+  if (member.directEndpoint) routes.push(member.directEndpoint);
+  if (relay) {
+    const relayRoute = `${relay}/p2p-circuit/p2p/${peerId}`;
+    if (!routes.includes(relayRoute)) routes.push(relayRoute);
+  }
+  if (!routes.length) routes.push(undefined);
+  let lastError: unknown;
+  for (const route of routes) {
+    if (!canWrite()) return;
+    try {
+      await transport.sendMessage({ peerId, memberId, ...(route ? { multiaddr: route } : {}) },
+        envelope, 'terminal-stream', canWrite);
+      return;
+    } catch (error) { lastError = error; }
+  }
+  throw lastError instanceof Error ? lastError : new Error('could not stream terminal output');
+}
+
+ptyManager.setOutputHandler(queueTeamTerminalOutput);
+
+async function sendLocalTeamPresence(): Promise<void> {
+  const transport = teamTransport;
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  if (!transport || !cfg.enabled || !cfg.officeId || !persist.isOpen) return;
+  lastLocalPresenceSentAt = Date.now();
+  const identity = ensureTeamIdentity(integrations, cfg.deviceId || `device-${randomBytes(8).toString('hex')}`);
+  if (!identity.ok) return;
+  const name = cfg.displayName.trim().slice(0, 32) || 'OFFICE-X teammate';
+  let snapshot: TeamPresencePeer[];
+  try {
+    snapshot = parseTeamPresence([{ id: identity.identity.deviceId, name, agents: localTeamPresenceAgents }]);
+  } catch { return; }
+  const peers = persist.listTrustedTeamMembers(cfg.officeId);
+  await Promise.allSettled(peers.map(async (member) => {
+    const peerId = await teamPeerIdFromSigningPublicKey(member.signingPublicKey);
+    if (!await isTrustedTransportPeer(peerId, member.memberId, cfg.officeId)) return;
+    const relay = teamRelayAddress(cfg).replace(/\/$/, '');
+    const routes: Array<string | undefined> = [];
+    if (member.directEndpoint) routes.push(member.directEndpoint);
+    if (relay) {
+      const relayRoute = `${relay}/p2p-circuit/p2p/${peerId}`;
+      if (!routes.includes(relayRoute)) routes.push(relayRoute);
+    }
+    await sendTeamPresenceWithRouteFallback(
+      (target, value) => transport.sendPresence(target, value),
+      { peerId, memberId: member.memberId }, routes, snapshot
+    );
+  }));
+}
+
+function scheduleLocalTeamPresence(): void {
+  if (localPresenceSendTimer) return;
+  const delay = Math.max(0, 750 - (Date.now() - lastLocalPresenceSentAt));
+  localPresenceSendTimer = setTimeout(() => {
+    localPresenceSendTimer = null;
+    void sendLocalTeamPresence();
+  }, delay);
+  localPresenceSendTimer.unref?.();
+}
+
+async function reconcileTeamTransportOnce(): Promise<void> {
+  const revision = ++teamTransportRevision;
+  if (localPresenceSendTimer) clearTimeout(localPresenceSendTimer);
+  localPresenceSendTimer = null;
+  if (teamPresenceTimer) clearInterval(teamPresenceTimer);
+  teamPresenceTimer = null;
+  const previous = teamTransport;
+  teamTransport = null;
+  remoteTeamPresence.clear();
+  remoteTeamPresenceSeenAt.clear();
+  publishRemoteTeamPresence();
+  await previous?.close().catch(() => undefined);
+
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  if (!cfg.enabled || !cfg.officeId || !persist.isOpen) {
+    teamTransportError = '';
+    return;
+  }
+  const relayAddress = teamRelayAddress(cfg);
+  if (cfg.connectionMode !== 'peer-to-peer' && !relayAddress) {
+    teamTransportError = cfg.connectionMode === 'managed-relay'
+      ? 'OQVIAN managed relay is not configured on this build.'
+      : 'Enter a self-hosted Circuit Relay v2 multiaddr.';
+    return;
+  }
+
+  const identity = ensureTeamIdentity(integrations, cfg.deviceId || `device-${randomBytes(8).toString('hex')}`);
+  if (!identity.ok) {
+    teamTransportError = identity.error;
+    return;
+  }
+  try {
+    const p2pListenAddress = cfg.connectionMode === 'peer-to-peer'
+      ? teamListenAddressForEndpoint(cfg.peerToPeerEndpoint)
+      : undefined;
+    const candidate = await createTeamTransport({
+      identity: identity.identity,
+      officeId: cfg.officeId,
+      relayAddress: relayAddress || undefined,
+      ...(p2pListenAddress ? { listenAddresses: [p2pListenAddress] } : {}),
+      isPeerAuthorized: isTrustedTransportPeer,
+      onPresence: async ({ peerId, memberId, officeId, snapshot }) => {
+        if (officeId !== cfg.officeId || snapshot.length !== 1 || snapshot[0].id !== memberId
+          || !await isTrustedTransportPeer(peerId, memberId, officeId)) {
+          throw new Error('invalid or untrusted teammate presence');
+        }
+        remoteTeamPresence.set(memberId, snapshot[0]);
+        remoteTeamPresenceSeenAt.set(memberId, Date.now());
+        publishRemoteTeamPresence();
+      },
+      onMessage: async ({ peerId, memberId, officeId, trafficClass, envelope }) => {
+        if (officeId !== cfg.officeId || !persist.isOpen
+          || !await isTrustedTransportPeer(peerId, memberId, officeId)) {
+          throw new Error('untrusted teammate message');
+        }
+        const currentIdentity = ensureTeamIdentity(integrations, cfg.deviceId || `device-${randomBytes(8).toString('hex')}`);
+        if (!currentIdentity.ok) throw new Error(currentIdentity.error);
+        let message: TeamMessage;
+        try {
+          message = acceptIncomingTeamEnvelope({
+            envelope,
+            identity: currentIdentity.identity,
+            officeId,
+            store: persist
+          });
+        } catch (error) {
+          // A successfully handled envelope has a trigger-history receipt. If
+          // its sender retries after losing the ACK, answer from that receipt
+          // without executing the action a second time.
+          if (error instanceof Error && error.message === 'team message replay detected') {
+            const receipt = listTriggerHistory().find((entry) => entry.source === 'org'
+              && entry.direction === 'inbound' && entry.sourceId === memberId
+              && entry.correlationId === envelope.messageId);
+            return { status: receipt && receipt.decision !== 'rejected' ? 'accepted' : 'rejected' };
+          }
+          throw error;
+        }
+        try {
+          const expectedTrafficClass = message.action === 'terminal-stream' ? 'terminal-stream' : 'control';
+          if (trafficClass !== expectedTrafficClass) throw new Error('team message traffic class does not match its action');
+          dispatchTeamMessage(message, memberId);
+          return { status: 'accepted' as const };
+        } catch {
+          // Persist a minimal rejection receipt. Do not echo untrusted payload
+          // text into the user's history when dispatch fails.
+          const member = persist.getTrustedTeamMember(officeId, memberId);
+          appendTriggerHistory({ source: 'org', sourceId: memberId, sourceName: member?.displayName ?? 'Teammate',
+            direction: 'inbound', peer: member?.displayName ?? 'Teammate', title: 'Shared office action rejected',
+            body: 'The requested action could not be completed on this device.', kind: 'directive',
+            decision: 'rejected', correlationId: message.id });
+          notifyTriggerHistoryUpdated();
+          return { status: 'rejected' as const };
+        }
+      }
+    });
+    if (revision !== teamTransportRevision) {
+      await candidate.close();
+      return;
+    }
+    teamTransport = candidate;
+    teamTransportError = '';
+    await sendLocalTeamPresence();
+    teamPresenceTimer = setInterval(() => {
+      expireRemoteTeamPresence();
+      void sendLocalTeamPresence();
+    }, 15_000);
+    teamPresenceTimer.unref?.();
+  } catch (error) {
+    if (revision === teamTransportRevision) {
+      teamTransportError = error instanceof Error ? error.message.slice(0, 240) : 'OFFICE-X could not start its team connection.';
+    }
+  }
+}
+
+function reconcileTeamTransport(): Promise<void> {
+  if (teamTransportReconcilePromise) {
+    teamTransportReconcileAgain = true;
+    return teamTransportReconcilePromise;
+  }
+  const run = (async () => {
+    do {
+      teamTransportReconcileAgain = false;
+      await reconcileTeamTransportOnce();
+    } while (teamTransportReconcileAgain);
+  })();
+  teamTransportReconcilePromise = run.finally(() => { teamTransportReconcilePromise = null; });
+  return teamTransportReconcilePromise;
+}
+
+/** Move the pre-security-preview plaintext key into OS-encrypted storage once. */
+function migrateLegacyOrgCredential(): void {
+  const org = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  const legacy = (org as OrgTriggerConfig & { apiKey?: unknown }).apiKey;
+  if (typeof legacy !== 'string' || !legacy) return;
+  const saved = integrations.setSecret(ORG_API_KEY_SECRET_REF, legacy);
+  const { apiKey: _legacyApiKey, ...safeOrg } = org as OrgTriggerConfig & { apiKey?: unknown };
+  writeConfig({ orgTrigger: { ...safeOrg, apiKeySet: saved.ok } });
+  if (!saved.ok) console.error('[team] legacy credential was removed because OS encryption is unavailable');
+}
+
+function localTeamIdentity(): {
+  ok: boolean;
+  error?: string;
+  officeId?: string;
+  deviceId?: string;
+  displayName?: string;
+  signingPublicKey?: string;
+  encryptionPublicKey?: string;
+  fingerprint?: string;
+  directEndpoint?: string;
+} {
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  const preferredId = cfg.deviceId || `device-${randomBytes(8).toString('hex')}`;
+  const result = ensureTeamIdentity(integrations, preferredId);
+  if (!result.ok) return result;
+  if (cfg.deviceId !== result.identity.deviceId) {
+    writeConfig({ orgTrigger: { ...cfg, deviceId: result.identity.deviceId } });
+  }
+  const directEndpoint = teamTransport ? teamAdvertisedRoute(teamTransport) : undefined;
+  return {
+    ok: true,
+    officeId: cfg.officeId,
+    deviceId: result.identity.deviceId,
+    displayName: cfg.displayName,
+    signingPublicKey: result.identity.signingPublicKey,
+    encryptionPublicKey: result.identity.encryptionPublicKey,
+    fingerprint: teamKeyFingerprint(result.identity.signingPublicKey, result.identity.encryptionPublicKey),
+    ...(directEndpoint ? { directEndpoint } : {})
+  };
+}
+
+function teamAdvertisedRoute(transport: TeamTransport): string | undefined {
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  if (cfg.connectionMode === 'peer-to-peer') {
+    const configured = teamEndpointForPeer(cfg.peerToPeerEndpoint, transport.peerId);
+    if (configured) return configured;
+  }
+  return transport.getAddresses().find((address) => isPublicDirectTeamRoute(address, transport.peerId));
+}
+
+function isPublicDirectTeamRoute(address: string, peerId: string): boolean {
+  if (!address.endsWith(`/p2p/${peerId}`) || address.includes('/p2p-circuit')) return false;
+  const v4 = address.match(/\/ip4\/([^/]+)/)?.[1];
+  if (v4) return isPublicTeamRouteAddress(v4);
+  const v6 = address.match(/\/ip6\/([^/]+)/)?.[1]?.toLowerCase();
+  return Boolean(v6 && isPublicTeamRouteAddress(v6));
+}
+
+ipcMain.handle('org:getTrigger', () => {
+  const { apiKey: _legacyApiKey, ...cfg } = (readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER) as OrgTriggerConfig & { apiKey?: unknown };
+  return { ...cfg, apiKeySet: integrations.hasSecret(ORG_API_KEY_SECRET_REF) };
+});
+ipcMain.handle('org:getIdentity', async () => {
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  if (cfg.enabled && !teamTransport && persist.isOpen) await reconcileTeamTransport();
+  return localTeamIdentity();
+});
+ipcMain.handle('org:transportStatus', () => {
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  const connectionConfigured = cfg.connectionMode === 'peer-to-peer'
+    ? Boolean(teamListenAddressForEndpoint(cfg.peerToPeerEndpoint))
+    : Boolean(teamRelayAddress(cfg));
+  return {
+    running: teamTransport !== null,
+    connectionConfigured,
+    peerId: teamTransport?.peerId,
+    error: teamTransportError || undefined
+  };
+});
+ipcMain.handle('org:sendTaskRequest', async (event, raw: unknown) => {
+  if (![...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id)) return { ok: false, error: 'invalid renderer' };
+  const value = (raw ?? {}) as Record<string, unknown>;
+  if (typeof value.memberId !== 'string' || typeof value.title !== 'string' || typeof value.message !== 'string'
+    || value.title.trim().length < 1 || value.title.length > 120 || value.message.trim().length < 1 || value.message.length > 8000) {
+    return { ok: false, error: 'enter a title and a task request under 8,000 characters' };
+  }
+  try {
+    await sendTeamMessage(value.memberId, 'task-request', { title: value.title.trim(), message: value.message.trim() });
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+});
+ipcMain.handle('org:sendAgentPrompt', async (event, raw: unknown) => {
+  if (![...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id)) return { ok: false, error: 'invalid renderer' };
+  const value = (raw ?? {}) as Record<string, unknown>;
+  if (typeof value.memberId !== 'string' || typeof value.agentId !== 'string' || typeof value.prompt !== 'string'
+    || !value.prompt.trim() || value.prompt.length > 8000) return { ok: false, error: 'select a remote agent and enter a prompt' };
+  try {
+    await sendTeamMessage(value.memberId, 'agent-prompt', { agentId: value.agentId, prompt: value.prompt.trim() });
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+});
+ipcMain.handle('org:sendTerminalInput', async (event, raw: unknown) => {
+  if (![...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id)) return { ok: false, error: 'invalid renderer' };
+  const value = (raw ?? {}) as Record<string, unknown>;
+  if (typeof value.memberId !== 'string' || typeof value.agentId !== 'string' || typeof value.input !== 'string'
+    || !value.input || value.input.length > 4096) return { ok: false, error: 'select a remote agent and enter terminal input' };
+  try {
+    await sendTeamMessage(value.memberId, 'terminal-input', { agentId: value.agentId, input: value.input });
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+});
+ipcMain.handle('org:getTerminalShares', (event, memberId: unknown) => {
+  if (![...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id)
+    || typeof memberId !== 'string') return [];
+  return [...(teamTerminalShares.get(memberId) ?? new Set<string>())];
+});
+ipcMain.handle('org:setTerminalShare', (event, raw: unknown) => {
+  if (![...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id)) return { ok: false, error: 'invalid renderer' };
+  const value = (raw ?? {}) as Record<string, unknown>;
+  if (typeof value.memberId !== 'string' || typeof value.agentId !== 'string' || typeof value.enabled !== 'boolean') {
+    return { ok: false, error: 'select a teammate and local agent' };
+  }
+  const key = `${value.memberId}\u0000${value.agentId}`;
+  if (!value.enabled) {
+    teamTerminalShares.get(value.memberId)?.delete(value.agentId);
+    if (teamTerminalShares.get(value.memberId)?.size === 0) teamTerminalShares.delete(value.memberId);
+    invalidateTeamTerminalStream(key);
+    return { ok: true, enabled: false };
+  }
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  const member = cfg.officeId ? persist.getTrustedTeamMember(cfg.officeId, value.memberId) : undefined;
+  if (!cfg.enabled || !cfg.officeId || !teamTransport || !member || member.controlLevel !== 'full-control'
+    || !isRemoteTeamMemberOnline(value.memberId)) {
+    return { ok: false, error: 'terminal sharing requires an online full-control teammate' };
+  }
+  const agent = hive.registry().agents[value.agentId];
+  if (!agent || agent.archived || agent.isGod || agent.isAssistant || !ptyForAgent(value.agentId)) {
+    return { ok: false, error: 'select an active local agent terminal' };
+  }
+  let agents = teamTerminalShares.get(value.memberId);
+  if (value.enabled && !agents?.has(value.agentId)
+    && ((agents?.size ?? 0) >= MAX_SHARED_TERMINALS_PER_PEER
+      || [...teamTerminalShares.values()].reduce((total, selected) => total + selected.size, 0) >= MAX_SHARED_TERMINALS_TOTAL)) {
+    return { ok: false, error: 'terminal sharing limit reached' };
+  }
+  if (!agents) { agents = new Set<string>(); teamTerminalShares.set(value.memberId, agents); }
+  if (value.enabled) agents.add(value.agentId);
+  else agents.delete(value.agentId);
+  if (agents.size === 0) teamTerminalShares.delete(value.memberId);
+  return { ok: true, enabled: value.enabled };
+});
+ipcMain.handle('org:getPresence', () => {
+  expireRemoteTeamPresence();
+  return parseTeamPresence([...remoteTeamPresence.values()].slice(0, 8));
+});
+ipcMain.handle('org:updatePresence', (event, raw: unknown) => {
+  if (![...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id)) {
+    return { ok: false, error: 'invalid renderer' };
+  }
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  if (!cfg.enabled || !cfg.officeId) return { ok: false, error: 'shared office is not enabled' };
+  try {
+    const parsed = parseTeamPresence([{ id: 'device-local', name: cfg.displayName.trim().slice(0, 32) || 'OFFICE-X teammate', agents: raw }]);
+    localTeamPresenceAgents = parsed[0].agents;
+    scheduleLocalTeamPresence();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'invalid local presence' };
+  }
+});
+function teamKeyFingerprint(signingPublicKey: string, encryptionPublicKey: string): string {
+  const signing = createPublicKey(signingPublicKey).export({ type: 'spki', format: 'der' });
+  const encryption = createPublicKey(encryptionPublicKey).export({ type: 'spki', format: 'der' });
+  return createHash('sha256')
+    .update(signing)
+    .update(Buffer.from([0]))
+    .update(encryption)
+    .digest('hex')
+    .toUpperCase()
+    .match(/.{1,4}/g)!
+    .join(' ');
+}
+ipcMain.handle('org:listMembers', () => {
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  if (!cfg.officeId || !persist.isOpen) return [];
+  return persist.listTrustedTeamMembers(cfg.officeId).map((member) => ({
+    memberId: member.memberId,
+    displayName: member.displayName,
+    controlLevel: member.controlLevel,
+    fingerprint: teamKeyFingerprint(member.signingPublicKey, member.encryptionPublicKey),
+    createdAt: member.createdAt
+  }));
+});
+ipcMain.handle('org:previewInvite', async (_evt, raw: unknown) => {
+  const value = (raw ?? {}) as Record<string, unknown>;
+  if (value.version !== 1 || !isTeamDeviceId(value.memberId)
+    || typeof value.officeId !== 'string' || !normalizeTeamId(value.officeId, '')
+    || typeof value.displayName !== 'string' || !value.displayName.trim() || value.displayName.length > 80
+    || typeof value.signingPublicKey !== 'string' || value.signingPublicKey.length > 4096
+    || typeof value.encryptionPublicKey !== 'string' || value.encryptionPublicKey.length > 4096) {
+    return { ok: false, error: 'invalid OFFICE-X invitation' };
+  }
+  try {
+    const signing = createPublicKey(value.signingPublicKey);
+    const encryption = createPublicKey(value.encryptionPublicKey);
+    if (signing.asymmetricKeyType !== 'ed25519' || encryption.asymmetricKeyType !== 'x25519') {
+      return { ok: false, error: 'invitation must contain Ed25519 and X25519 public keys' };
+    }
+    const expectedPeerId = await teamPeerIdFromSigningPublicKey(value.signingPublicKey);
+    const directEndpoint = normalizeTeamRoute(value.directEndpoint, expectedPeerId);
+    const fingerprint = teamKeyFingerprint(value.signingPublicKey, value.encryptionPublicKey);
+    return {
+      ok: true,
+      invite: {
+        version: 1 as const,
+        officeId: value.officeId,
+        memberId: value.memberId,
+        displayName: value.displayName.trim(),
+        signingPublicKey: value.signingPublicKey,
+        encryptionPublicKey: value.encryptionPublicKey,
+        fingerprint,
+        ...(directEndpoint ? { directEndpoint } : {})
+      }
+    };
+  } catch {
+    return { ok: false, error: 'invitation public keys could not be read' };
+  }
+});
+ipcMain.handle('org:setOfficeId', async (_evt, raw: unknown) => {
+  if (typeof raw !== 'string') return { ok: false, error: 'office id required' };
+  const officeId = normalizeTeamId(raw, '');
+  if (!officeId) return { ok: false, error: 'invalid office id' };
+  if (!persist.isOpen) return { ok: false, error: 'local team store is unavailable' };
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  if (cfg.officeId && cfg.officeId !== officeId
+    && persist.listTrustedTeamMembers(cfg.officeId, true).length > 0) {
+    return { ok: false, error: 'revoke existing members before moving this device to another office' };
+  }
+  const updated = { ...cfg, officeId };
+  if (cfg.officeId !== officeId) {
+    clearTeamTerminalSharing();
+    teamTerminalLastReceived.clear();
+  }
+  writeConfig({ orgTrigger: updated });
+  await reconcileTeamTransport();
+  return { ok: true, officeId };
+});
+ipcMain.handle('org:pinMember', async (_evt, raw: unknown) => {
+  if (!persist.isOpen) return { ok: false, error: 'local team store is unavailable' };
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  const value = (raw ?? {}) as Record<string, unknown>;
+  const officeId = normalizeTeamId(typeof value.officeId === 'string' ? value.officeId : cfg.officeId ?? '', '');
+  if (!officeId) return { ok: false, error: 'create or join a shared office first' };
+  if (cfg.officeId && officeId !== cfg.officeId) {
+    return { ok: false, error: 'invitation belongs to a different office' };
+  }
+  const memberId = typeof value.memberId === 'string' ? value.memberId : '';
+  const displayName = typeof value.displayName === 'string' ? value.displayName : '';
+  const signingPublicKey = typeof value.signingPublicKey === 'string' ? value.signingPublicKey : '';
+  const encryptionPublicKey = typeof value.encryptionPublicKey === 'string' ? value.encryptionPublicKey : '';
+  const controlLevel = isPeerControlLevel(value.controlLevel) ? value.controlLevel : cfg.defaultControlLevel;
+  try {
+    const ownIdentity = localTeamIdentity();
+    if (!ownIdentity.ok) return { ok: false, error: ownIdentity.error };
+    if (!isTeamDeviceId(memberId) || memberId === ownIdentity.deviceId) {
+      return { ok: false, error: 'invalid teammate device id' };
+    }
+    const fingerprint = teamKeyFingerprint(signingPublicKey, encryptionPublicKey);
+    const confirmed = typeof value.fingerprintConfirmation === 'string'
+      ? value.fingerprintConfirmation.replace(/\s/g, '').toUpperCase()
+      : '';
+    if (confirmed !== fingerprint.replace(/\s/g, '')) {
+      return { ok: false, error: 'fingerprint does not match; verify it with the teammate through another channel' };
+    }
+    const member = persist.upsertTrustedTeamMember({
+      officeId,
+      memberId,
+      displayName,
+      signingPublicKey,
+      encryptionPublicKey,
+      controlLevel,
+      directEndpoint: normalizeTeamRoute(value.directEndpoint, await teamPeerIdFromSigningPublicKey(signingPublicKey))
+    });
+    // Joining an office happens only on the explicit fingerprint-confirmed pin action.
+    if (!cfg.officeId) {
+      writeConfig({ orgTrigger: { ...cfg, officeId } });
+      await reconcileTeamTransport();
+    }
+    return {
+      ok: true,
+      member: {
+        memberId: member.memberId,
+        displayName: member.displayName,
+        controlLevel: member.controlLevel,
+        fingerprint,
+        createdAt: member.createdAt
+      }
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+ipcMain.handle('org:setMemberControl', (_evt, raw: unknown) => {
+  if (!persist.isOpen) return { ok: false, error: 'local team store is unavailable' };
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  const value = (raw ?? {}) as Record<string, unknown>;
+  if (!cfg.officeId || typeof value.memberId !== 'string' || !isPeerControlLevel(value.controlLevel)) {
+    return { ok: false, error: 'invalid member access update' };
+  }
+  try {
+    const member = persist.getTrustedTeamMember(cfg.officeId, value.memberId);
+    if (!member) return { ok: false, error: 'trusted member not found' };
+    const updated = persist.upsertTrustedTeamMember({ ...member, controlLevel: value.controlLevel });
+    if (updated.controlLevel !== 'full-control') {
+      invalidateTeamTerminalStreamsForMember(updated.memberId);
+    }
+    return { ok: true, controlLevel: updated.controlLevel };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+ipcMain.handle('org:revokeMember', (_evt, raw: unknown) => {
+  if (!persist.isOpen) return { ok: false, error: 'local team store is unavailable' };
+  const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  if (!cfg.officeId || typeof raw !== 'string') return { ok: false, error: 'invalid member id' };
+  try {
+    const revoked = persist.revokeTrustedTeamMember(cfg.officeId, raw);
+    invalidateTeamTerminalStreamsForMember(raw);
+    teamTerminalLastReceived.forEach((_sequence, key) => { if (key.startsWith(`${raw}\u0000`)) teamTerminalLastReceived.delete(key); });
+    remoteTeamPresence.delete(raw);
+    remoteTeamPresenceSeenAt.delete(raw);
+    publishRemoteTeamPresence();
+    teamPeerIdCache.clear();
+    return { ok: revoked };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+ipcMain.handle('org:clearApiKey', () => {
+  integrations.deleteSecret(ORG_API_KEY_SECRET_REF);
+  const current = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+  writeConfig({ orgTrigger: { ...current, apiKeySet: false } });
+  return { ok: true, apiKeySet: false };
+});
+ipcMain.handle('org:setTrigger', async (_evt, arg: unknown) => {
   const current = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
   const p = (arg ?? {}) as Partial<OrgTriggerConfig>;
-  // PERSIST ONLY — the peer messaging service does not exist yet, so nothing
-  // reads `apiKey` beyond the settings surface that shows it. Deliberately no
-  // start/stop, no network, no side effect of any kind.
+  // Network listeners start only while the user has explicitly enabled this
+  // office and the selected route passes its local validation.
   const next: OrgTriggerConfig = {
-    apiKey: typeof p.apiKey === 'string' ? p.apiKey.trim() : current.apiKey,
+    apiKeySet: integrations.hasSecret(ORG_API_KEY_SECRET_REF),
     enabled: typeof p.enabled === 'boolean' ? p.enabled : current.enabled,
-    mode: isTriggerMode(p.mode) ? p.mode : current.mode
+    mode: isTriggerMode(p.mode) ? p.mode : current.mode,
+    officeId: normalizeTeamId(p.officeId, current.officeId),
+    deviceId: normalizeDeviceId(p.deviceId, current.deviceId),
+    displayName: typeof p.displayName === 'string'
+      ? p.displayName.trim().slice(0, 80)
+      : current.displayName,
+    connectionMode: isOrgConnectionMode(p.connectionMode) ? p.connectionMode : current.connectionMode,
+    managedRelayEndpoint: normalizeTeamEndpoint(p.managedRelayEndpoint, current.managedRelayEndpoint),
+    selfHostedEndpoint: normalizeTeamEndpoint(p.selfHostedEndpoint, current.selfHostedEndpoint),
+    peerToPeerEndpoint: normalizePublicTeamEndpoint(p.peerToPeerEndpoint ?? current.peerToPeerEndpoint),
+    defaultControlLevel: isPeerControlLevel(p.defaultControlLevel)
+      ? p.defaultControlLevel
+      : current.defaultControlLevel,
+    peerControlLevels: p.peerControlLevels === undefined
+      ? current.peerControlLevels
+      : normalizePeerControlLevels(p.peerControlLevels)
   };
+  if (next.enabled && !next.officeId) next.officeId = `office-${randomBytes(12).toString('hex')}`;
+  if (!next.enabled || next.officeId !== current.officeId) {
+    clearTeamTerminalSharing();
+    teamTerminalLastReceived.clear();
+  }
   writeConfig({ orgTrigger: next });
+  if (next.enabled) {
+    const identity = localTeamIdentity();
+    if (!identity.ok) {
+      const disabled = { ...next, enabled: false };
+      writeConfig({ orgTrigger: disabled });
+      await reconcileTeamTransport();
+      return disabled;
+    }
+  }
+  await reconcileTeamTransport();
   return next;
 });
 
@@ -4278,29 +5261,29 @@ ipcMain.handle('triggerHistory:decide', (_evt, arg: unknown) => {
   if (!id || !decision) return null;
   const entry: TriggerHistoryEntry | undefined = listTriggerHistory().find((e) => e.id === id);
   if (!entry) return null;
-  if (entry.decision !== 'pending') return entry; // already decided → no-op, not a re-dispatch
-
-  if (decision === 'rejected') {
-    const next = updateTriggerHistory(id, { decision: 'rejected' });
-    notifyTriggerHistoryUpdated();
-    return next;
-  }
-
-  const taskId = `webhook-${randomBytes(8).toString('hex')}`;
   const tokenHash = heldTokenHashFor(id);
-  const title = entry.title ?? (entry.body.length > 80 ? `${entry.body.slice(0, 79)}…` : entry.body);
-  if (!dispatchWebhookWork({ taskId, title, message: entry.body, tokenHash, origin: entry.source })) {
-    // The card is what the caller polls and what god works from. Leave the entry
-    // pending so the operator can approve again once the hive is writable.
-    return entry;
+  let taskId: string | undefined;
+  const result = decidePendingEntry({
+    entry,
+    decision,
+    dispatch: () => {
+      taskId = `webhook-${randomBytes(8).toString('hex')}`;
+      const title = entry.title ?? (entry.body.length > 80 ? `${entry.body.slice(0, 79)}…` : entry.body);
+      return dispatchWebhookWork({ taskId, title, message: entry.body, tokenHash, origin: entry.source });
+    },
+    update: (nextDecision) => updateTriggerHistory(id, {
+      decision: nextDecision,
+      ...(nextDecision === 'approved' && taskId ? { taskId } : {})
+    }) ?? entry
+  });
+  if (result.dispatched) {
+    // The hash now lives on the card, so the caller's GET resolves through the
+    // normal task lookup from here on.
+    if (tokenHash) { heldTokens().delete(tokenHash); persistHeldTokens(); }
+    pruneHeldTokens();
   }
-  // The hash now lives on the card, so the caller's GET resolves through the
-  // normal task lookup from here on.
-  if (tokenHash) { heldTokens().delete(tokenHash); persistHeldTokens(); }
-  const next = updateTriggerHistory(id, { decision: 'approved', taskId });
-  pruneHeldTokens();
-  notifyTriggerHistoryUpdated();
-  return next;
+  if (result.changed) notifyTriggerHistoryUpdated();
+  return result.entry;
 });
 
 // ─── IPC: Generic webhook (LEGACY single-endpoint channels) ─────────────────
@@ -5269,6 +6252,7 @@ function onSystemResume(reason: string): void {
 }
 
 app.whenReady().then(() => {
+  migrateLegacyOrgCredential();
   // Realtime Michael mic-gate hygiene (rt-8 / Pam rt-10 nit): the voice session
   // opens the mic permission gate by persisting realtimeVoiceEnabled=true and
   // closes it on disconnect — but a hard crash/reload mid-session skips that
@@ -5293,7 +6277,7 @@ app.whenReady().then(() => {
   void loadModelCatalog(MODEL_CATALOG_CACHE()).catch(() => { /* never fatal */ });
 
   // A cold-start deep link (Windows/Linux) rides in on OUR argv.
-  const startupHireLink = process.argv.find((a) => a.startsWith('munderdifflin://'));
+  const startupHireLink = process.argv.find((a) => a.startsWith(`${APP_PROTOCOL_SCHEME}://`));
   if (startupHireLink) void handleHireLink(startupHireLink);
 
   // Hand every spawned agent the path to the Slack reply discovery file via the
@@ -5305,6 +6289,7 @@ app.whenReady().then(() => {
   // Guarded: a DB failure (e.g. a bad native build) must degrade to defaults,
   // never block app startup.
   try { persist.open(); } catch (e) { console.error('[db] open failed:', e); }
+  void reconcileTeamTransport();
   // Auto-update from GitHub releases (packaged builds only; gated on the
   // `autoUpdate` config flag). Download-in-background + restart-to-apply toast;
   // never restarts on its own. Falls back to a notify-only releases/latest

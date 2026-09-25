@@ -17,7 +17,7 @@
  * Contract: hive/docs/integrations-spec.md.
  */
 import { app, safeStorage } from 'electron';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   type IntegrationRecord,
@@ -98,8 +98,20 @@ function readSecretBlob(): Record<string, string> {
 
 function writeSecretBlob(blob: Record<string, string>): void {
   const p = secretsPath();
-  mkdirSync(dirname(p), { recursive: true });
+  mkdirSync(dirname(p), { recursive: true, mode: 0o700 });
   writeFileSync(p, JSON.stringify(blob, null, 2), { encoding: 'utf8', mode: 0o600 });
+  // mode only applies when creating a new file; repair permissions on upgrades
+  // and on secret files copied from older installs.
+  chmodSync(p, 0o600);
+}
+
+/** Linux Electron may report encryption available while selecting basic_text,
+ * which uses a fixed application password instead of OS-backed protection. */
+function hasAcceptableSecretStorage(): boolean {
+  if (!safeStorage.isEncryptionAvailable()) return false;
+  if (process.platform !== 'linux') return true;
+  const backend = safeStorage.getSelectedStorageBackend();
+  return backend !== 'basic_text' && backend !== 'unknown';
 }
 
 /** Store a secret ENCRYPTED. Fail closed if OS encryption is unavailable (never
@@ -108,8 +120,8 @@ export function setSecret(secretRef: string, plaintext: string): { ok: boolean; 
   if (!secretRef) return { ok: false, error: 'secretRef required' };
   if (typeof plaintext !== 'string' || plaintext === '') return { ok: false, error: 'secret required' };
   try {
-    if (!safeStorage.isEncryptionAvailable()) {
-      return { ok: false, error: 'OS secret encryption is unavailable; refusing to store a secret in plaintext' };
+    if (!hasAcceptableSecretStorage()) {
+      return { ok: false, error: 'Strong OS secret storage is unavailable; refusing to store a secret with the selected backend' };
     }
     const cipher = safeStorage.encryptString(plaintext).toString('base64');
     const blob = readSecretBlob();
@@ -128,7 +140,7 @@ export function getSecret(secretRef: string | undefined): string | undefined {
   const cipher = readSecretBlob()[secretRef];
   if (!cipher) return undefined;
   try {
-    if (!safeStorage.isEncryptionAvailable()) return undefined;
+    if (!hasAcceptableSecretStorage()) return undefined;
     return safeStorage.decryptString(Buffer.from(cipher, 'base64'));
   } catch {
     return undefined;

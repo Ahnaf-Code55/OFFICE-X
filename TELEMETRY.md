@@ -1,13 +1,11 @@
-# Telemetry
+# OFFICE-X telemetry
 
-Munder Difflin collects a small set of **anonymous** usage events so we can
-understand adoption (how many people launch the app, whether they get a first
-agent running, which features get used) and make the product better. This
-document is the complete, authoritative
-contract: **if an event or property is not listed here, the app does not send
-it.** The implementation lives in [`src/main/analytics.ts`](src/main/analytics.ts)
-and enforces this list as a hard allowlist — the code and this file are kept in
-lockstep, and because the repo is open source you can verify that yourself.
+OFFICE-X builds can send a small set of anonymous usage events when a PostHog
+key is configured at build time and the user has not opted out. Builds without
+that key send no analytics. This document is the complete contract: **if an
+event or property is not listed here, the app does not send it.** The
+implementation lives in [`src/main/analytics.ts`](src/main/analytics.ts) and
+enforces this list as a hard allowlist.
 
 ## What is sent
 
@@ -98,12 +96,13 @@ Any one of these fully disables telemetry:
    anonymous usage stats" during onboarding). Takes effect immediately.
 2. Set the standard [`DO_NOT_TRACK`](https://consoledonottrack.com)
    environment variable (any value other than `0`). Respected unconditionally.
-3. **Build from source.** The PostHog key is injected only in official release
-   CI; a local or forked build compiles without one and the analytics module
-   is a no-op — forks never send events anywhere.
+3. **Build without an analytics key.** Local builds and release builds without
+   `POSTHOG_KEY` compile with an empty key and the analytics module is a no-op.
+   A publisher that configures the release secret enables the events above,
+   subject to the in-app setting and `DO_NOT_TRACK`.
 
 ## Self-hosting note
 
-PostHog is open source and self-hostable. Official builds point at PostHog
-Cloud (US); the endpoint is a build-time setting (`POSTHOG_HOST`), so the
-project can move to a self-hosted instance without any code change.
+PostHog is open source and self-hostable. When analytics is configured, the
+endpoint is a build-time setting (`POSTHOG_HOST`); deployments should document
+which service they use.

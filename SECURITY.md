@@ -1,38 +1,42 @@
 # Security Policy
 
-## Scope
+OFFICE-X runs agent CLIs and tools on the user's machine. The optional shared
+office feature also opens libp2p connections for presence and end-to-end
+encrypted teammate messages. A self-hosted Circuit Relay v2 host forwards
+encrypted connections; it does not authenticate office membership or grant
+permissions. See [the shared-office architecture](./docs/ARCHITECTURE.md) and
+[relay deployment notes](./relay/README.md).
 
-Munder Difflin is a **local-first desktop app**. It spawns local processes in PTYs and
-reads/writes files under directories you register. It opens **no network listeners
-beyond a local Unix domain socket** used for the in-app hook server, and has no auth or
-remote surface by design.
+## Security boundaries
 
-## Supported versions
+- Renderer code has no direct Node.js access. Privileged operations pass through
+  narrow `contextBridge` APIs and are validated in the main process.
+- Shared-office peers must be explicitly pinned by public-key fingerprint.
+  Transport Peer IDs, message signatures, office IDs and replay protection are
+  checked before actions are dispatched.
+- The receiving device enforces its locally stored access level for every
+  teammate action. Terminal output sharing requires explicit per-member and
+  per-agent opt-in, and is disabled when access is downgraded or revoked.
+- Terminal output can contain credentials or other private data. It is encrypted
+  in transit, kept in memory for live delivery, and is not added to trigger
+  history.
+- A relay is a network exposure. Bind and publish only the addresses intended
+  for your deployment, persist its identity key with restrictive permissions,
+  terminate public WebSocket TLS at a correctly configured proxy, and enforce
+  host-level network controls.
 
-This is an early prototype. Security fixes target the `main` branch only.
-
-| Version | Supported |
-|---|---|
-| `main` | ✅ |
-| older tags | ❌ |
+These controls do not replace review of the operating system, agent CLI,
+integrations, relay host, or the prompts and files agents can access.
 
 ## Reporting a vulnerability
 
-Please **do not** open a public issue for security problems.
+Please do not post credentials, private keys, invite payloads, or an unpatched
+vulnerability in a public issue. Contact the OQVIAN project maintainers through
+your organization's private security channel and include reproduction steps,
+affected versions, and impact. Do not send live secrets with the report.
 
-- Use GitHub's **private vulnerability reporting**: the *Security → Report a
-  vulnerability* tab on https://github.com/chaitanyagiri/munder-difflin, **or**
-- Email **girichaitanya11@gmail.com** with a description, reproduction steps, and
-  impact.
+## Supported versions
 
-You can expect an acknowledgement within a few days. Once a fix is available we'll
-credit you (unless you prefer to stay anonymous).
-
-## Notes for reviewers
-
-- Renderer ↔ main IPC goes through a typed `contextBridge` (`window.cth`); the renderer
-  has no direct Node access (`nodeIntegration: false`, `contextIsolation: true`).
-- All `fs:*` / `git:*` IPC calls are sandboxed and path-validated in the main process,
-  rooted at an agent's working directory.
-- The hive commits to a local git repo from a **single committer** (the main process);
-  agents only write plain files.
+Until OQVIAN publishes a release policy, security fixes are developed against
+the current OFFICE-X source branch. Treat locally built or unreleased versions
+as unsupported for production use.

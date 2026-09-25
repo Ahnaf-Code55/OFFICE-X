@@ -42,6 +42,22 @@ export const DEFAULT_TRIGGER_MODE: TriggerMode = 'strict';
  */
 export type InboundKind = 'directive' | 'communication';
 
+/** How an invited teammate connects to this office. */
+export type OrgConnectionMode = 'managed-relay' | 'peer-to-peer' | 'self-hosted';
+
+/** Maximum control the owner grants one teammate over this device's agents. */
+export type PeerControlLevel = 'task-requests' | 'delegated' | 'full-control';
+
+export const ORG_CONNECTION_MODES: OrgConnectionMode[] = [
+  'managed-relay', 'peer-to-peer', 'self-hosted'
+];
+
+export const PEER_CONTROL_LEVELS: { value: PeerControlLevel; label: string }[] = [
+  { value: 'task-requests', label: 'Task requests (owner approves)' },
+  { value: 'delegated', label: 'Delegated control' },
+  { value: 'full-control', label: 'Full shared control' }
+];
+
 /** Resolve a mode + kind into whether the message may be routed without a human. */
 export function isAutoAllowed(mode: TriggerMode, kind: InboundKind): boolean {
   if (mode === 'allow-all') return true;
@@ -193,29 +209,55 @@ export const DEFAULT_WEBHOOK_SCHEMA = JSON.stringify(DEFAULT_WEBHOOK_SCHEMA_OBJE
 /* ────────────────────────── organisation trigger ─────────────────────────── */
 
 /**
- * Peer-to-peer messaging between teammates' installs. Each teammate runs their own
- * Munder Difflin; setting an org key lets their instance address yours.
+ * Messaging between teammates' OFFICE-X installs. Each teammate runs their own
+ * local office; team connection preferences choose how the installs find each other.
  *
- * UI + persistence only for now — the transport service does not exist yet, so
- * nothing reads `apiKey` beyond the settings surfaces that display it.
+ * Shared-office preferences. Transport and membership stay in the main process;
+ * only non-secret settings and public identity keys may cross into the renderer.
  */
 export interface OrgTriggerConfig {
-  apiKey: string;
+  /** Public boolean only. The actual relay credential lives in OS-encrypted storage. */
+  apiKeySet: boolean;
   enabled: boolean;
   mode: TriggerMode;
+  officeId: string;
+  deviceId: string;
+  displayName: string;
+  connectionMode: OrgConnectionMode;
+  /** Configured managed OQVIAN Circuit Relay v2 host; may be release-provided instead. */
+  managedRelayEndpoint: string;
+  selfHostedEndpoint: string;
+  /** Public literal-IP TCP route for direct P2P after router port forwarding. */
+  peerToPeerEndpoint: string;
+  defaultControlLevel: PeerControlLevel;
+  /** Per-peer overrides, keyed by the stable peer id assigned by the team service. */
+  peerControlLevels: Record<string, PeerControlLevel>;
 }
 
 export const DEFAULT_ORG_TRIGGER: OrgTriggerConfig = {
-  apiKey: '',
+  apiKeySet: false,
   enabled: false,
-  mode: DEFAULT_TRIGGER_MODE
+  mode: DEFAULT_TRIGGER_MODE,
+  officeId: '',
+  deviceId: '',
+  displayName: '',
+  connectionMode: 'managed-relay',
+  managedRelayEndpoint: '',
+  selfHostedEndpoint: '',
+  peerToPeerEndpoint: '',
+  defaultControlLevel: 'task-requests',
+  peerControlLevels: {}
 };
 
-/** Copy shown under the org key field. Kept here so Settings and Triggers agree. */
-export const CLONE_NODE_BLURB =
-  'Set an organisation key and your teammates can message your clone node — the copy of '
-  + 'Munder Difflin running on your machine. Each teammate runs their own, so an org key '
-  + 'is how two installs find each other.';
+/** Keep shared-office approval history reachable without a legacy API key. */
+export function shouldShowTriggerHistory(input: {
+  webhookCount: number;
+  sharedOfficeEnabled: boolean;
+  officeId: string;
+  hasLegacyCredential: boolean;
+}): boolean {
+  return input.webhookCount > 0 || input.sharedOfficeEnabled || Boolean(input.officeId) || input.hasLegacyCredential;
+}
 
 /* ──────────────────────────── trigger history ────────────────────────────── */
 

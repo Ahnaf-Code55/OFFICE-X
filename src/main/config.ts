@@ -513,7 +513,14 @@ function withTriggerDefaults(cfg: HarnessConfig): HarnessConfig {
       compact: { ...DEFAULT_CONTEXT_TRIGGER.compact, ...cfg.contextTrigger?.compact },
       clear: { ...DEFAULT_CONTEXT_TRIGGER.clear, ...cfg.contextTrigger?.clear }
     },
-    orgTrigger: { ...DEFAULT_ORG_TRIGGER, ...cfg.orgTrigger },
+    orgTrigger: {
+      ...DEFAULT_ORG_TRIGGER,
+      ...cfg.orgTrigger,
+      peerControlLevels: {
+        ...DEFAULT_ORG_TRIGGER.peerControlLevels,
+        ...cfg.orgTrigger?.peerControlLevels
+      }
+    },
     webhookTriggers: Array.isArray(cfg.webhookTriggers)
       ? cfg.webhookTriggers.map((t) => ({ ...t }))
       : []
@@ -638,19 +645,33 @@ export function onConfigWritten(listener: ConfigWriteListener): () => void {
 
 function persistConfig(next: HarnessConfig): HarnessConfig {
   const p = configPath();
+  // Older prototypes stored the organization relay credential directly in
+  // config.json. Never write it back, including through config:update. The
+  // startup migration moves it into the OS-encrypted secret store first.
+  const sanitized = { ...next };
+  if (sanitized.orgTrigger) {
+    const legacy = sanitized.orgTrigger as OrgTriggerConfig & { apiKey?: unknown };
+    const { apiKey: _legacyApiKey, ...safeOrg } = legacy;
+    sanitized.orgTrigger = {
+      ...DEFAULT_ORG_TRIGGER,
+      ...safeOrg,
+      apiKeySet: typeof legacy.apiKeySet === 'boolean' ? legacy.apiKeySet : false,
+      peerControlLevels: { ...safeOrg.peerControlLevels }
+    };
+  }
   mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, JSON.stringify(next, null, 2), 'utf8');
+  writeFileSync(p, JSON.stringify(sanitized, null, 2), { encoding: 'utf8', mode: 0o600 });
   // Saving one setting stores only that setting, so fill the rest back in first:
   // subscribers must see the same complete config a read gives them, never a
   // half-filled one. Skip the migration — it saves in its own right, and has
   // already run against what this change was built on.
-  const view = normalizeStoredHomes(withTriggerDefaults({ ...DEFAULTS, ...next }));
+  const view = normalizeStoredHomes(withTriggerDefaults({ ...DEFAULTS, ...sanitized }));
   // The change is already saved, so one failed subscriber must not fail the save
   // for its caller, nor stop the subscribers after it.
   for (const listener of configWriteListeners) {
     try { listener(view); } catch { /* a broken listener is not a failed save */ }
   }
-  return next;
+  return sanitized;
 }
 
 export function writeConfig(patch: Partial<HarnessConfig>): HarnessConfig {

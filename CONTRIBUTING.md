@@ -1,4 +1,4 @@
-# Contributing to Munder Difflin
+# Contributing to OFFICE-X
 
 Thanks for your interest! This is an early prototype, so there's a lot of surface
 area and plenty of room to help. This guide covers setup, the gotchas, and the
@@ -17,7 +17,7 @@ much cheaper than finding out in review.
 - **Keep the change scoped to one clear improvement, fix, or refactor.** A fix
   plus a rename plus a refactor is three pull requests, and all three merge
   faster than the one.
-- **Munder Difflin targets macOS, Windows and Linux.** Every change has to work
+- **OFFICE-X targets macOS, Windows and Linux.** Every change has to work
   on all three unless it sits behind an explicit runtime platform check. Most
   of our cross-platform bugs are paths: use `path.join` and the Node path
   helpers, never a hand-built `"a/b"` string.
@@ -36,11 +36,11 @@ much cheaper than finding out in review.
 
 ### Prerequisites
 
-- **macOS, Windows, or Linux** — signed/notarized macOS builds, plus Windows and
-  Linux builds, ship from the [releases page](https://github.com/chaitanyagiri/munder-difflin/releases/latest).
-  Cross-platform smoke-testing and fixes are still very welcome (see
+- **macOS, Windows, or Linux** — release artifacts and signing configuration
+  will be published through OQVIAN when its release channel is configured.
+  Cross-platform smoke-testing and fixes are welcome (see
   [Good first areas](#good-first-areas)).
-- **Node.js 18+** and npm.
+- **Node.js 22.22 or newer** and npm.
 - A **C/C++ toolchain** to build `node-pty`'s native addon. On macOS:
   ```bash
   xcode-select --install
@@ -52,8 +52,8 @@ much cheaper than finding out in review.
 ### Install & run
 
 ```bash
-git clone <your-fork-url> munder-difflin
-cd munder-difflin
+git clone <your-office-x-repository-url> OFFICE-X
+cd OFFICE-X
 npm install        # postinstall rebuilds node-pty against Electron's ABI
 npm run dev        # live-reloading Electron build
 ```
@@ -133,9 +133,8 @@ negotiate, and every one of them is cheaper to avoid than to fix in review:
 - **Wholesale reformatting** of files, or a diff where the real change is buried
   in whitespace and import reordering.
 - **A rewrite nobody asked for.** Large architectural changes need an issue or a
-  [discussion](https://github.com/chaitanyagiri/munder-difflin/discussions) with
-  agreement **before** you write the code. We would rather say no to a paragraph
-  than to a week of your work.
+  project discussion with agreement **before** you write the code. We would
+  rather say no to a paragraph than to a week of your work.
 - **Generated or unattributed content** — art that isn't yours or compatibly
   licensed, or a description that doesn't match what the diff does.
 - **Dependency additions** that aren't justified in the description. A new

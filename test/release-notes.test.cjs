@@ -334,15 +334,8 @@ test('the notes file we actually ship fits the toast', () => {
   assert.doesNotMatch(notes, /<[a-z]/i, 'the notes file must stay free of HTML');
 });
 
-test('electron-builder points the release notes at a file that exists', () => {
-  // Without this field electron-updater silently falls back to the atom feed,
-  // which is the whole bug. A typo here fails open and looks like nothing.
+test('electron-builder does not route this fork to an upstream release feed', () => {
   const cfg = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.yml'), 'utf8');
-  const match = cfg.match(/^releaseInfo:\n\s+releaseNotesFile:\s*(\S+)\s*$/m);
-
-  assert.ok(match, 'releaseInfo.releaseNotesFile is missing from electron-builder.yml');
-  assert.ok(
-    fs.existsSync(path.join(__dirname, '..', match[1])),
-    `releaseNotesFile points at a missing file: ${match[1]}`
-  );
+  assert.doesNotMatch(cfg, /^publish:/m, 'OQVIAN has not configured an update repository yet');
+  assert.doesNotMatch(cfg, /^releaseInfo:/m, 'do not consume upstream release notes');
 });

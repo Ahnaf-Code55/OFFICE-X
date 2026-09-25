@@ -31,7 +31,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       # node-gyp (used to rebuild native node-pty) imports distutils, which was
@@ -55,6 +55,9 @@ jobs:
           # forks without the secret compile with '' and analytics no-ops.
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # Public libp2p route (including its relay Peer ID), never a secret.
+          # Empty by default; configured by the deployment owner as a repository variable.
+          OFFICE_X_MANAGED_RELAY_MULTIADDR: ${{ vars.OFFICE_X_MANAGED_RELAY_MULTIADDR }}
 
       - name: Package installers
         # GH_TOKEN lets electron-builder skip its own publish; we upload via the

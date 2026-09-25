@@ -17,7 +17,7 @@ interface ThemeMeta { id: ThemeId; label: string; blurb: string; built: boolean;
 const THEME_META: ThemeMeta[] = [
   { id: 'office',        label: 'The Office',         blurb: 'Dunder Mifflin — the original floor', built: true,  swatch: '#6b5a4a' },
   { id: 'friends',       label: 'Friends',            blurb: 'Central Perk coffee house',           built: false, swatch: '#9a5a32' },
-  { id: 'brooklyn99',    label: 'Brooklyn Nine-Nine', blurb: 'The 99th precinct bullpen',           built: true,  swatch: '#3a5a7a' },
+  { id: 'brooklyn99',    label: 'Brooklyn Nine-Nine', blurb: 'The 99th precinct bullpen',           built: false, swatch: '#3a5a7a' },
   { id: 'siliconvalley', label: 'Silicon Valley',     blurb: 'The Hacker Hostel',                   built: false, swatch: '#4a6a4a' },
   { id: 'got',           label: 'Game of Thrones',    blurb: 'The Red Keep throne room',            built: false, swatch: '#6a2630' },
   { id: 'hogwarts',      label: 'Harry Potter',       blurb: 'Hogwarts great hall',                 built: false, swatch: '#39305a' },
@@ -56,7 +56,7 @@ export function OfficeThemePicker({ config }: { config: HarnessConfig }) {
 
   const onSelect = (id: ThemeId) => {
     setNote('');
-    if (busy || id === current) return;                 // no-op on the current theme
+    if (busy || id === current || !THEME_META.find((theme) => theme.id === id)?.built) return;
     if (nonGodAgents().length === 0) { void applyTheme(id); return; } // god-only → instant
     setPending(id);                                     // workers exist → confirm modal
   };
@@ -124,15 +124,15 @@ export function OfficeThemePicker({ config }: { config: HarnessConfig }) {
               <button
                 key={theme.id}
                 onClick={() => onSelect(theme.id)}
-                disabled={busy}
+                disabled={busy || !theme.built}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
-                  padding: 8, cursor: busy ? 'default' : 'pointer',
+                  padding: 8, cursor: busy || !theme.built ? 'not-allowed' : 'pointer',
                   background: isCurrent ? 'var(--cth-paper-100)' : 'transparent',
                   boxShadow: isCurrent
                     ? 'inset 0 0 0 1.5px var(--cth-ink-500)'
                     : 'inset 0 0 0 1px var(--cth-ink-300)',
-                  opacity: busy && !isCurrent ? 0.6 : 1,
+                  opacity: (!theme.built || busy) && !isCurrent ? 0.6 : 1,
                 }}
               >
                 <span style={{

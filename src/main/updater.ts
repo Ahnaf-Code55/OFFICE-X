@@ -1,11 +1,12 @@
-import { app, ipcMain, shell } from 'electron';
+import { app, ipcMain } from 'electron';
 import type { WebContents } from 'electron';
 import { request as httpsRequest } from 'node:https';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readConfig } from './config';
 import { DEFAULT_DROP_HTML } from '../shared/releaseDrop';
-import { reduceStatus, clampPercent, isNewer, installerUrl, shouldShowReleaseDrop, type UpdateStatus } from '../shared/updateState';
+import { reduceStatus, clampPercent, isNewer, shouldShowReleaseDrop, type UpdateStatus } from '../shared/updateState';
+import { parseReleaseRepository } from './releaseConfig';
 
 /**
  * Auto-update from GitHub releases.
@@ -44,7 +45,10 @@ import { reduceStatus, clampPercent, isNewer, installerUrl, shouldShowReleaseDro
  *      downgrade is per-check, not a permanent latch.
  */
 
-const REPO = 'chaitanyagiri/munder-difflin';
+// OFFICE-X does not yet have an OQVIAN release repository. Keep every
+// packaged update and release poll disabled until one is configured.
+const UPDATES_ENABLED = false;
+const RELEASE_REPOSITORY = parseReleaseRepository(process.env.OFFICE_X_RELEASE_REPOSITORY);
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
 const FALLBACK_CACHE_MS = 60 * 60 * 1000;     // 1h between releases/latest polls
 
@@ -169,8 +173,7 @@ function errText(e: unknown): string {
  *  electron-builder.yml produces: mac-{arch}.dmg, win-x64-setup.exe,
  *  linux-x86_64.AppImage. Null when the release has no matching asset, and the
  *  caller falls back to the releases page. Download URLs live under
- *  github.com/REPO/releases/download/, so the openRelease prefix guard already
- *  admits them. */
+ *  is provided by the configured release's asset list. */
 export function pickDownloadAsset(
   assets: ReadonlyArray<{ name?: string; browser_download_url?: string }> | undefined,
   platform: NodeJS.Platform = process.platform,
@@ -188,13 +191,14 @@ export function pickDownloadAsset(
 
 /** Body of the release tagged v{version}, or undefined. Never throws. */
 function fetchReleaseBody(version: string, done: (notes: string | undefined) => void): void {
+  if (!RELEASE_REPOSITORY) { done(undefined); return; }
   try {
     const req = httpsRequest(
       {
         hostname: 'api.github.com',
-        path: `/repos/${REPO}/releases/tags/v${version}`,
+        path: `/repos/${RELEASE_REPOSITORY}/releases/tags/v${version}`,
         method: 'GET',
-        headers: { 'User-Agent': 'munder-difflin-updater', Accept: 'application/vnd.github+json' },
+        headers: { 'User-Agent': 'OFFICE-X-updater', Accept: 'application/vnd.github+json' },
         timeout: 10_000
       },
       (res) => {
@@ -217,6 +221,7 @@ function fetchReleaseBody(version: string, done: (notes: string | undefined) => 
 
 /** Notify-only check against releases/latest (no download). Never throws. */
 function fallbackCheck(reason: string | undefined, force = false): void {
+  if (!RELEASE_REPOSITORY) return;
   const now = Date.now();
   if (!force && now - lastFallbackCheck < FALLBACK_CACHE_MS) return;
   lastFallbackCheck = now;
@@ -224,9 +229,9 @@ function fallbackCheck(reason: string | undefined, force = false): void {
     const req = httpsRequest(
       {
         hostname: 'api.github.com',
-        path: `/repos/${REPO}/releases/latest`,
+        path: `/repos/${RELEASE_REPOSITORY}/releases/latest`,
         method: 'GET',
-        headers: { 'User-Agent': 'munder-difflin-updater', Accept: 'application/vnd.github+json' },
+        headers: { 'User-Agent': 'OFFICE-X-updater', Accept: 'application/vnd.github+json' },
         timeout: 10_000
       },
       (res) => {
@@ -241,7 +246,7 @@ function fallbackCheck(reason: string | undefined, force = false): void {
               emit({
                 state: 'available-manual',
                 version: tag.replace(/^v/, ''),
-                url: rel.html_url ?? `https://github.com/${REPO}/releases/latest`,
+                url: rel.html_url ?? `https://github.com/${RELEASE_REPOSITORY}/releases/latest`,
                 reason,
                 downloadUrl: pickDownloadAsset(rel.assets) ?? undefined,
                 // Already in the response we just parsed — carrying it costs
@@ -343,7 +348,7 @@ async function runDownload(): Promise<{ ok: boolean; error?: string }> {
  *  shape instead (bold lead paragraph, then `### Fixed`) it returns ONE bullet —
  *  the lead paragraph, clipped mid-sentence. Verified against the published
  *  v0.4.4-rc.1 body: this shape yields the same 3 bullets the real toast shows. */
-const SIMULATED_NOTES = `# Munder Difflin v9.9.9
+const SIMULATED_NOTES = `# OFFICE-X v9.9.9
 
 **A local hive of Claude Code, Antigravity, Codex, Grok & Copilot agents that run themselves** —
 messaging, routing, and remembering, coordinated by your clone, Michael, who you talk to.
@@ -368,6 +373,7 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
 
   // IPC surface is registered unconditionally so the renderer can always call it.
   ipcMain.handle('update:restartAndInstall', async () => {
+    if (!UPDATES_ENABLED) return { ok: false, error: 'OFFICE-X updates are not configured yet' };
     // Re-entry guard: a restart is already in flight. Firing quitAndInstall a
     // second time hits a native command Squirrel has already disabled and it
     // throws "The command is disabled and cannot be executed", the recurring
@@ -393,10 +399,12 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
     }
   });
   ipcMain.handle('update:checkNow', async () => {
+    if (!UPDATES_ENABLED) return { ok: false, error: 'OFFICE-X updates are not configured yet' };
     if (!app.isPackaged) return { ok: false, error: 'dev build — updates are only checked in packaged apps' };
     return runCheck();
   });
   ipcMain.handle('update:download', async () => {
+    if (!UPDATES_ENABLED) return { ok: false, error: 'OFFICE-X updates are not configured yet' };
     if (!app.isPackaged) return { ok: false, error: 'dev build — updates are only downloaded in packaged apps' };
     return runDownload();
   });
@@ -428,25 +436,27 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
         : SIMULATED_NOTES;
     emit(o.state === 'downloaded'
       ? { state: 'downloaded', version, notes }
-      : { state: 'available-manual', version, notes, url: `https://github.com/${REPO}/releases/tag/v${version}`, downloadUrl: installerUrl(version, process.platform, process.arch) });
+      : { state: 'available-manual', version, notes, url: RELEASE_REPOSITORY ? `https://github.com/${RELEASE_REPOSITORY}/releases/tag/v${version}` : undefined });
     logLine(`SIMULATED ${o.state === 'downloaded' ? 'downloaded' : 'available-manual'} ${version} (dev only)`);
     return { ok: true };
   });
-  // DEV ONLY — `MD_DROP_PREVIEW=<path to a release body .md>` (see
+  ipcMain.handle('update:openRelease', () => ({ ok: false, error: 'OFFICE-X updates are not configured yet' }));
+  if (!UPDATES_ENABLED) return;
+  // DEV ONLY — `OFFICE_X_DROP_PREVIEW=<path to a release body .md>` (see
   // `npm run dev:drop`) feeds that file through the simulate path on boot, so a
   // drop under authoring opens centred the moment the window is up, with no
   // DevTools paste. The renderer pulls `update:current` on mount, so emitting
   // before the window exists is fine. Same hard gate as `update:simulate`.
-  const previewPath = process.env.MD_DROP_PREVIEW;
+  const previewPath = process.env.OFFICE_X_DROP_PREVIEW;
   if (!app.isPackaged && previewPath) {
     try {
       const notes = readFileSync(previewPath, 'utf8');
       const m = notes.match(/what[’']?s\s+new\s+in\s+v?(\d+\.\d+\.\d+)/i) ?? notes.match(/\bv(\d+\.\d+\.\d+)\b/);
       const version = m?.[1] ?? '9.9.9';
-      emit({ state: 'available-manual', version, notes, url: `https://github.com/${REPO}/releases/tag/v${version}`, downloadUrl: installerUrl(version, process.platform, process.arch) });
-      logLine(`SIMULATED available-manual ${version} from MD_DROP_PREVIEW=${previewPath} (dev only)`);
+      emit({ state: 'available-manual', version, notes, url: RELEASE_REPOSITORY ? `https://github.com/${RELEASE_REPOSITORY}/releases/tag/v${version}` : undefined });
+      logLine(`SIMULATED available-manual ${version} from OFFICE_X_DROP_PREVIEW=${previewPath} (dev only)`);
     } catch (e) {
-      logLine(`MD_DROP_PREVIEW unreadable: ${errText(e)}`);
+      logLine(`OFFICE_X_DROP_PREVIEW unreadable: ${errText(e)}`);
     }
   }
   // First launch after the version moved: show THIS release's page. The stamp
@@ -488,22 +498,6 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
       logLine(`post-update check failed: ${errText(e)}`);
     }
   }
-  ipcMain.handle('update:openRelease', (_evt, url: unknown) => {
-    const href = typeof url === 'string' ? url : `https://github.com/${REPO}/releases/latest`;
-    // Only ever open the project's releases page — this is not a generic opener.
-    if (!href.startsWith(`https://github.com/${REPO}/`)) return { ok: false };
-    // An asset URL means the badge's download click, not the notes link. It is
-    // the only positive trace the manual path leaves, and it has to be written
-    // by the build being REPLACED, so the version that reads it is the next one
-    // — analytics.ts (update_applied.via) picks it up from 0.4.6, and until then
-    // this line is here purely so there is something to pick up. Nothing else
-    // depends on it and openExternal has already been decided above.
-    const asset = /\/releases\/download\/v([0-9][^/]*)\//.exec(href);
-    if (asset) logLine(`manual download opened: ${asset[1]}`);
-    void shell.openExternal(href);
-    return { ok: true };
-  });
-
   if (!app.isPackaged) return;
   if (started) return;
   started = true;

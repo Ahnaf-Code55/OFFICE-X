@@ -1,10 +1,15 @@
-# Munder Difflin — Design System
+# OFFICE-X — Design System
 
 > The aesthetic is **Animal Crossing × Earthbound × SNES menu UI**. Pixel-snapped, chunky, friendly. Every UI element should feel like it could appear in a Nintendo game from 1995–2005. This document is canonical: any new component must derive from these tokens.
 
 ---
 
 ## 1. Principles
+
+OFFICE-X keeps the inherited pixel-office interface and its existing warm palette. The OFFICE-X
+app mark remains in the application; OQVIAN is the company identity and must not replace it. Keep
+the two marks distinct wherever both appear. Upstream art and attribution remain governed by
+[`ATTRIBUTION.md`](./src/renderer/src/assets/ATTRIBUTION.md).
 
 1. **Pixel-snapped everything.** No half-pixels. No CSS blur. No floaty `border-radius`. The grid is real.
 2. **Chunky over slick.** Borders are visible, panels have weight, buttons feel pressable. If a component could exist on iOS 17, it's wrong.
@@ -112,7 +117,7 @@ No gradients except: vertical 2-stop on title bars (`cream-100` → `cream-200`)
 
 ## 4. Typography
 
-Three fonts, all loaded from Google Fonts. **Every text element must declare a font from this set.** No system fonts.
+Three fonts, bundled locally with the app. **Every text element must declare a font from this set.** No system fonts or launch-time font fetch.
 
 | Role | Family | Why |
 |---|---|---|
@@ -714,7 +719,8 @@ Both files import from a single source-of-truth `tokens.json` at build time (fut
 ## 18. Open design decisions (revisit)
 
 1. Whether to commission custom sprite art vs continuing programmatic sprites long-term.
-2. Dark mode: not in v1 — pixel art with cream backgrounds is the brand. Revisit if requested.
+2. Dark mode: retain the implemented light and dark themes; pixel art and cream backgrounds remain
+   central to the light theme.
 3. Resizable rooms vs fixed grid — currently spec'd fixed; may want to drag-resize rooms.
 4. Whether to add ambient floor decorations (flowers, rugs) — yes, low-priority polish.
 5. Custom mouse cursor (pixel-style hand) — defer.

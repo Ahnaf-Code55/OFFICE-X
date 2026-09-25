@@ -15,7 +15,8 @@ const define = { __APP_VERSION__: JSON.stringify(pkg.version) };
 const defineMain = {
   ...define,
   __POSTHOG_KEY__: JSON.stringify(process.env.POSTHOG_KEY ?? ''),
-  __POSTHOG_HOST__: JSON.stringify(process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com')
+  __POSTHOG_HOST__: JSON.stringify(process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com'),
+  __OFFICE_X_MANAGED_RELAY_MULTIADDR__: JSON.stringify(process.env.OFFICE_X_MANAGED_RELAY_MULTIADDR ?? '')
 };
 
 // Copy raw .cjs main-process sidecars into out/main after the main bundle is

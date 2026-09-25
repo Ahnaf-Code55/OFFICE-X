@@ -1,0 +1,45 @@
+services:
+  office-x-relay:
+    build: .
+    image: office-x-circuit-relay:local
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    ports:
+      - "4001:4001/tcp"
+      - "127.0.0.1:4002:4002/tcp"
+    volumes:
+      - relay-data:/data
+    environment:
+      OFFICEX_RELAY_ANNOUNCE_MULTIADDRS: ${OFFICEX_RELAY_ANNOUNCE_MULTIADDRS:-}
+      OFFICEX_RELAY_MAX_CONNECTIONS: ${OFFICEX_RELAY_MAX_CONNECTIONS:-250}
+      OFFICEX_RELAY_MAX_INBOUND_HOP_STREAMS: ${OFFICEX_RELAY_MAX_INBOUND_HOP_STREAMS:-128}
+      OFFICEX_RELAY_MAX_OUTBOUND_HOP_STREAMS: ${OFFICEX_RELAY_MAX_OUTBOUND_HOP_STREAMS:-128}
+      OFFICEX_RELAY_MAX_OUTBOUND_STOP_STREAMS: ${OFFICEX_RELAY_MAX_OUTBOUND_STOP_STREAMS:-128}
+      OFFICEX_RELAY_MAX_RESERVATIONS: ${OFFICEX_RELAY_MAX_RESERVATIONS:-1000}
+      OFFICEX_RELAY_RESERVATION_TTL_MS: ${OFFICEX_RELAY_RESERVATION_TTL_MS:-7200000}
+      OFFICEX_RELAY_MAX_DURATION_MS: ${OFFICEX_RELAY_MAX_DURATION_MS:-1800000}
+      OFFICEX_RELAY_MAX_DATA_BYTES: ${OFFICEX_RELAY_MAX_DATA_BYTES:-67108864}
+    stop_grace_period: 20s
+    healthcheck:
+      # This confirms the libp2p TCP listener is accepting connections. It does
+      # not test public routing, the TLS proxy, or a Circuit Relay reservation.
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('node:net').connect(4001, '127.0.0.1').on('error', () => process.exit(1)).on('connect', function () { this.end() })"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  relay-data:

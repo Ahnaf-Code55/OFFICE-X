@@ -1,32 +1,36 @@
 {
-  "name": "munder-difflin",
+  "name": "office-x",
   "version": "0.4.6",
   "private": true,
-  "description": "Clones for you and your team, working 24/7 — a free, local-first multi-agent harness that turns the CLI coding agent you already run into a clone of you, coordinating an office of agents on your machine.",
-  "main": "out/main/index.js",
-  "author": "Chaitanya Giri",
-  "homepage": "https://munderdiffl.in/",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/chaitanyagiri/munder-difflin.git"
+  "desktopName": "OFFICE-X",
+  "engines": {
+    "node": ">=22.22.0"
   },
+  "description": "OFFICE-X is a shared virtual office for people and their AI teammates.",
+  "main": "out/main/index.js",
+  "author": "OQVIAN (based on Munder Difflin by Chaitanya Giri)",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build && npm run copy:main-assets",
     "copy:main-assets": "node tools/copy-main-assets.cjs",
     "preview": "electron-vite preview",
-    "postinstall": "electron-rebuild -f && node tools/ensure-pty-perms.cjs && node tools/patch-node-pty-conpty.cjs",
+    "postinstall": "electron-rebuild -f && node tools/ensure-pty-perms.cjs && node tools/patch-node-pty-conpty.cjs && node tools/normalize-tunnelmole-manifest.cjs",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "test:focused": "node --test test/*.test.cjs",
+    "test:focused": "node --test test/*.test.cjs relay/*.test.mjs",
+    "relay:start": "node relay/server.mjs",
+    "relay:test": "node --test relay/*.test.mjs",
+    "rebuild:native": "electron-rebuild -f",
     "check:links": "node tools/check-release-links.cjs",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:win": "npm run build && electron-builder --win",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist:linux": "npm run build && npm run rebuild:native && electron-builder --linux --config.npmRebuild=false"
   },
   "dependencies": {
+    "@chainsafe/libp2p-noise": "17.0.0",
+    "@chainsafe/libp2p-yamux": "8.0.1",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",
     "@codemirror/lang-javascript": "^6.2.5",
@@ -38,6 +42,12 @@
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.43.0",
     "@lezer/highlight": "^1.2.3",
+    "@libp2p/circuit-relay-v2": "4.2.13",
+    "@libp2p/crypto": "5.1.23",
+    "@libp2p/identify": "4.1.14",
+    "@libp2p/peer-id": "6.0.15",
+    "@libp2p/tcp": "11.0.28",
+    "@libp2p/websockets": "10.1.21",
     "@monaco-editor/react": "^4.7.0",
     "@openai/agents-realtime": "^0.11.8",
     "@uiw/react-codemirror": "^4.25.10",
@@ -45,11 +55,11 @@
     "@xterm/addon-unicode11": "^0.9.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^5.5.0",
-    "better-sqlite3": "^11.10.0",
+    "better-sqlite3": "^13.0.3",
     "commit-graph": "^2.4.0",
     "electron-updater": "^6.8.9",
     "i18next": "^26.3.6",
-    "localtunnel": "^2.0.2",
+    "libp2p": "3.3.11",
     "monaco-editor": "^0.52.2",
     "node-pty": "^1.0.0",
     "pixi.js": "^8.5.1",
@@ -60,26 +70,36 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tunnelmole": "^2.4.0",
+    "ws": "^8.21.3",
     "zustand": "^4.5.5"
   },
   "devDependencies": {
     "@electron/notarize": "^2.5.0",
-    "@electron/rebuild": "^3.7.0",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/localtunnel": "^2.0.4",
+    "@electron/rebuild": "^4.2.0",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.7.5",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.2",
-    "electron": "^32.2.0",
-    "electron-builder": "^25.1.8",
-    "electron-vite": "^2.3.0",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
     "typescript": "^5.6.3",
-    "vite": "^5.4.8"
+    "vite": "^7.3.6"
   },
   "overrides": {
     "app-builder-lib": {
       "@electron/rebuild": "$@electron/rebuild"
+    },
+    "tunnelmole": {
+      "toml": "5.0.0"
     }
+  },
+  "allowScripts": {
+    "electron@44.4.5": true,
+    "node-pty@1.1.0": true,
+    "better-sqlite3@13.0.3": true,
+    "esbuild@0.28.2": true,
+    "tunnelmole@2.4.0": true
   }
 }

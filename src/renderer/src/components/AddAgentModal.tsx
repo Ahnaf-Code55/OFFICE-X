@@ -16,7 +16,6 @@ import {
   OSS_PROVIDER_PICKS,
   localSlugFor,
   hasOssQuickPicks,
-  OSS_BLOG_LINKS
 } from '@shared/ossModels';
 import {
   type AgentProvider,
@@ -45,8 +44,6 @@ const ossGroupHead: CSSProperties = {
   fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
   color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 4
 };
-const ossLink: CSSProperties = { color: 'var(--cth-ink-900)', textDecoration: 'underline', cursor: 'pointer' };
-
 // One-click briefing templates — fill Description + Goal with a sharp, ready-to-run
 // role so a user isn't staring at a blank field (item 7). The template BRIEFINGS
 // stay English (they become agent prompts — see the i18n report); only the
@@ -83,14 +80,14 @@ const DESCRIPTION_TEMPLATES: { labelKey: string; description: string; goal: stri
 // the exact JSON shape the importer accepts and ends with a fill-in section so the
 // user adds their own details (item 7). Kept in sync with the HireManifest schema
 // (src/shared/hire.ts) — provider allowlist is claude | codex | antigravity | cursor.
-const HIRE_PROMPT = `You are designing a "hire" — a ready-to-spawn AI agent for Munder Difflin, an app that runs a team of CLI coding agents. Output ONE JSON object (a hire manifest) and nothing else.
+const HIRE_PROMPT = `You are designing a "hire" — a ready-to-spawn AI agent for OFFICE-X, an app that runs a team of CLI coding agents. Output ONE JSON object (a hire manifest) and nothing else.
 
 Make the agent genuinely useful: give it a sharp role, a concrete standing goal, and a description that makes it behave like an expert operator of its CLI engine (Claude Code, Codex, or Antigravity/Gemini). It should know how to use the terminal, read and edit files, run and inspect commands, lean on available skills and MCP tools, keep notes in memory, and work autonomously toward its goal without hand-holding.
 
 Return EXACTLY this shape (omit optional fields you don't need; keep the spec string verbatim):
 
 {
-  "spec": "munder-difflin/hire@1",
+  "spec": "office-x/hire@1",
   "name": "Jim",
   "description": "one-line role — what this agent is for",
   "goal": "standing directive injected on every prompt — specific and outcome-oriented",
@@ -995,19 +992,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
 
                     {(provider === 'opencode' || provider === 'crush' || provider === 'pi' || provider === 'qwen') && (
                       <div style={{ fontSize: 12, color: 'var(--cth-ink-500)', lineHeight: '16px', margin: '2px 0 6px' }}>
-                        {tr('addAgent.byokNote')}
-                        {' '}
-                        <a
-                          href={OSS_BLOG_LINKS.openModels}
-                          onClick={(e) => { e.preventDefault(); void window.cth.openExternal(OSS_BLOG_LINKS.openModels); }}
-                          style={ossLink}
-                        >{tr('addAgent.runOnOpenModels')}</a>
-                        {' '}
-                        <a
-                          href={OSS_BLOG_LINKS.macMini}
-                          onClick={(e) => { e.preventDefault(); void window.cth.openExternal(OSS_BLOG_LINKS.macMini); }}
-                          style={ossLink}
-                        >{tr('addAgent.setUpMacMini')}</a>.
+                        {tr('addAgent.byokNote')} {tr('addAgent.runOnOpenModels')} · {tr('addAgent.setUpMacMini')}.
                       </div>
                     )}
 

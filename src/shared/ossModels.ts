@@ -3,13 +3,12 @@ import type { AgentProvider } from './agentProvider';
 /**
  * Open-source model quick-picks for the Add-Agent modal (ondev-c part-2).
  *
- * Curated, STABLE shortlist transcribed verbatim from the verified catalog
- * `hive/shared/cli-agents/oss-models-catalog.md` §7 (frozen by Jim). Robust slugs
- * only — bleeding-edge frontier models (GLM-5.2, Kimi-K2.7) are intentionally
- * EXCLUDED from code defaults (catalog §8 = verify-live) and left to the blogs.
+ * Curated shortlist of local and hosted model IDs used by the supported CLIs.
+ * Provider model IDs may change; keep the list aligned with the provider presets
+ * and verify IDs before release.
  *
  * Two buckets: LOCAL (Mac-runnable via Ollama/LM Studio, no key) and THIRD-PARTY
- * OSS PROVIDER (BYOK). Every engine consumes the same upstream id; only the
+ * OSS PROVIDER (BYOK). Every engine consumes the same provider id; only the
  * local prefix differs (§6): OpenCode names its local provider `local`; Crush and
  * pi use `ollama`. Provider-routed slugs are identical across the three engines.
  */
@@ -63,14 +62,7 @@ export function localSlugFor(provider: AgentProvider, tag: string): string {
   return provider === 'opencode' ? `local/${tag}` : `ollama/${tag}`;
 }
 
-/** Whether to surface the OSS quick-picks for this engine — the local-capable CLI
- *  engines integrated in v0.3.1. (Claude/Codex/Antigravity use their own logins.) */
+/** Whether to surface OSS quick-picks for a CLI with local-model support. */
 export function hasOssQuickPicks(provider: AgentProvider): boolean {
   return provider === 'opencode' || provider === 'crush' || provider === 'pi';
 }
-
-/** Canonical blog URLs the local-setup UI hyperlinks to (ondev-c part-3). */
-export const OSS_BLOG_LINKS = {
-  openModels: 'https://munderdiffl.in/blog/run-munder-difflin-on-open-models/',
-  macMini: 'https://munderdiffl.in/blog/run-munder-difflin-on-a-mac-mini/'
-} as const;

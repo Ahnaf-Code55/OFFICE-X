@@ -9,10 +9,10 @@ Two different queues get called "the queue". They are not the same thing:
 
 | Name | Lives in | Holds |
 |---|---|---|
-| **MD queue** | the harness (zustand store, per agent) | messages parked by *Munder Difflin* until that agent's terminal is free |
+| **OFFICE-X queue** | the harness (zustand store, per agent) | messages parked by OFFICE-X until that agent's terminal is free |
 | **Claude queue** | inside Claude Code itself | text Claude Code has accepted but not started on yet |
 
-Everything below is about the **MD queue**. The harness cannot see the Claude queue
+Everything below is about the **OFFICE-X queue**. The harness cannot see the Claude queue
 and never reasons about it.
 
 ---
@@ -21,7 +21,7 @@ and never reasons about it.
 
 One place types automatic messages into a live agent's PTY: the **drain loop**,
 `useHive.ts` effect #4. Everything that wants to reach a running agent enqueues into
-the MD queue and lets the drain decide when.
+the OFFICE-X queue and lets the drain decide when.
 
 (The single exception is the god agent's boot sequence, `useHive.ts:284`, which
 writes its remote-control command and orientation prompt directly. That PTY was
@@ -30,7 +30,7 @@ user draft it could land on.)
 
 ```
 composer / Slack ingress ─┐
-inbox nudge (effect #3) ──┼──▶ enqueueMessage(agentId, text) ──▶ MD queue ──▶ drain (#4) ──▶ PTY
+inbox nudge (effect #3) ──┼──▶ enqueueMessage(agentId, text) ──▶ OFFICE-X queue ──▶ drain (#4) ──▶ PTY
 scheduled /compact (#6) ──┘
 ```
 
@@ -46,7 +46,7 @@ coalesces) plus a 3 s backstop tick.
 
 ## 2. What the drain checks
 
-The front of an agent's MD queue is delivered only when **all** of these hold:
+The front of an agent's OFFICE-X queue is delivered only when **all** of these hold:
 
 | Condition | Why |
 |---|---|
@@ -81,7 +81,7 @@ delivery while any of these is true (`terminalAutomation.ts`):
 Both `picker` and `draft` expire after **30 minutes** (`STALE_PICKER_MS`,
 `STALE_INPUT_MS`). The expiry exists because both flags are inferred, not reported —
 a picker closed some way we can't observe, or a draft flag left set by a TUI that
-swallowed keys, would otherwise wedge that agent's MD queue for the rest of the
+swallowed keys, would otherwise wedge that agent's OFFICE-X queue for the rest of the
 session.
 
 Two rules about what happens when a block expires:
@@ -102,7 +102,7 @@ expensive mistake; leaving a queued message parked a while longer is the cheap o
 
 `inputDirty` is inferred by counting keystrokes in `term.onData`. That model drifts:
 a TUI that eats keys for its own UI leaves the count above zero while the prompt is
-visibly empty — a **phantom draft**, which blocks the MD queue against text that
+visibly empty — a **phantom draft**, which blocks the OFFICE-X queue against text that
 does not exist.
 
 xterm already holds the rendered screen, so `promptLineHasText` reads it directly
@@ -128,7 +128,7 @@ nothing.
 
 ## 5. Seeing why nothing is being delivered
 
-A held MD queue used to look exactly like an idle agent with nothing to do. The
+A held OFFICE-X queue used to look exactly like an idle agent with nothing to do. The
 `typing` badge (`--cth-status-typing`, label **"your draft"**) fixes that: it renders
 on agent cards and in the fullscreen roster whenever `hasTerminalDraft(ptyId)` is
 true.
@@ -149,4 +149,4 @@ there", not "is the queue blocked".
 | `src/renderer/src/components/terminalAutomation.ts` | pure policy — blocks, expiry windows. No DOM, fully unit-tested (`test/terminal-automation.test.cjs`) |
 | `src/renderer/src/components/terminalPool.ts` | the pooled xterm per PTY; buffer reads, latches, `isTerminalAutomationSafe`, `hasTerminalDraft` |
 | `src/renderer/src/hooks/useHive.ts` | effect #3 inbox nudge (enqueues), effect #4 drain (the one writer), effect #6 scheduled `/compact` |
-| `src/renderer/src/store/store.ts` | the MD queues themselves + agent persistence |
+| `src/renderer/src/store/store.ts` | the OFFICE-X queues themselves + agent persistence |

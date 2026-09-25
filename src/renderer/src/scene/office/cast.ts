@@ -8,11 +8,9 @@
 
 import { Texture } from 'pixi.js';
 import { paintPortrait, sceneFrameBufs, SCENE_W, SCENE_H } from './portraitArt';
+import type { TeamPresenceCharacter } from '@shared/teamPresence';
 
-export type OfficeCharacterName =
-  | 'michael' | 'jim' | 'pam' | 'dwight' | 'kevin' | 'angela'
-  | 'oscar' | 'stanley' | 'phyllis' | 'andy' | 'kelly' | 'ryan'
-  | 'toby' | 'creed' | 'meredith';
+export type OfficeCharacterName = TeamPresenceCharacter;
 
 export interface CastMember {
   name: OfficeCharacterName;

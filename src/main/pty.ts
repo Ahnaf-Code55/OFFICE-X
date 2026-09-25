@@ -332,6 +332,7 @@ export class PtyManager {
    *  runs. Best-effort — set once by the main process. */
   private exitHandler:
     ((id: string, exitCode?: number, info?: PtyExitInfo) => void) | null = null;
+  private outputHandler: ((id: string, data: string) => void) | null = null;
 
   /** The default/fallback output sink — set to the PRIMARY window. Used only for
    *  sessions with no recorded owner; owned sessions route to their owner. */
@@ -371,6 +372,12 @@ export class PtyManager {
     handler: (id: string, exitCode?: number, info?: PtyExitInfo) => void
   ): void {
     this.exitHandler = handler;
+  }
+
+  /** Main-process observer for opt-in integrations such as shared-office
+   *  terminal viewing. The normal owner-window renderer route remains private. */
+  setOutputHandler(handler: ((id: string, data: string) => void) | null): void {
+    this.outputHandler = handler;
   }
 
   /** Send to the renderer only if it's still alive. During app quit, killing a
@@ -707,6 +714,8 @@ export class PtyManager {
         session.tail = (session.tail + data).slice(-TAIL_MAX);
         // Route to the session's owner window (multi-window owner routing).
         this.safeSend(`pty:data:${opts.id}`, data, session.owner);
+        try { this.outputHandler?.(opts.id, data); }
+        catch { /* an observer must never disrupt the local terminal */ }
       });
       proc.onExit(({ exitCode, signal }) => {
         // Stale exit from a process whose id was reclaimed (kill()+respawn) — do

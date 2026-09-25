@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Application, Container, Graphics, Ticker, Texture } from 'pixi.js';
+import { Application, Container, Graphics, Text, Ticker, Texture } from 'pixi.js';
 // PixiJS uses new Function() internally, blocked by Electron CSP — this patches it.
 import 'pixi.js/unsafe-eval';
 import { useStore, type Agent } from '@/store/store';
@@ -17,6 +17,11 @@ import {
   installContextLossRecovery, planInitFailure, DEFAULT_MAX_INIT_RETRIES
 } from './glRecovery';
 import type { Tile, Facing, ErrandKind, ErrandSpot } from './themeRegistry';
+import {
+  getRemotePresence, publishRemotePresence, subscribeRemotePresence,
+  type RemotePresenceAgent, type RemotePresencePeer
+} from './remotePresence';
+import { SharedOfficeRoster } from './SharedOfficeRoster';
 
 // The map, tileset atlases, desk-claim order, errand spots, coffee-economy
 // tiles, prop anchors, monitor gids and palette all come from the active
@@ -74,6 +79,15 @@ interface Runtime {
   run?: CoffeeRun;
   /** When the current busy stretch (working/thinking/compacting) began. */
   busySince?: number;
+}
+
+/** A guest avatar is presentation only. It intentionally has no Agent, store
+ *  selection callback, local seat lifecycle hooks, or terminal association. */
+interface RemoteRuntime {
+  character: Character;
+  label: Text;
+  seatIndex: number;
+  status: string;
 }
 
 /** Only a busy stretch at least this long earns a cheer on finishing. Short
@@ -235,7 +249,10 @@ export function OfficeFloor() {
     appRef.current = app;
 
     const runtimes = new Map<string, Runtime>();
+    const remoteRuntimes = new Map<string, RemoteRuntime>();
+    const remotePending = new Set<string>();
     const seatClaims = new Set<number>();
+    const remoteSeatClaims = new Set<number>();
     // In-flight message envelopes (sender desk → recipient desk). Capped so a
     // broadcast doesn't bury the floor in paper.
     const envelopes: MessageEnvelope[] = [];
@@ -381,7 +398,7 @@ export function OfficeFloor() {
       const claimSeat = (agent: Agent): number | null => {
         if (agent.isGod) { seatClaims.add(GOD_SEAT); return GOD_SEAT; }
         for (let i = 1; i < seatTiles.length; i++) {
-          if (!seatClaims.has(i)) { seatClaims.add(i); return i; }
+          if (!seatClaims.has(i) && !remoteSeatClaims.has(i)) { seatClaims.add(i); return i; }
         }
         return null;
       };
@@ -1573,6 +1590,25 @@ export function OfficeFloor() {
 
       const syncAgents = () => {
         const { agents } = useStore.getState();
+        const seenTeamAgentIds = new Set<string>();
+        const teamPresence = agents.slice(0, 32).flatMap((agent) => {
+          // Keep the validated original local ID so teammate control actions can
+          // resolve it to this exact agent on the receiving device.
+          const id = agent.id;
+          if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(id) || seenTeamAgentIds.has(id)) return [];
+          seenTeamAgentIds.add(id);
+          const status: RemotePresenceAgent['status'] =
+            agent.status === 'working' || agent.status === 'thinking' || agent.status === 'compacting' || agent.status === 'looping'
+              ? 'working'
+              : agent.status === 'waiting' || agent.status === 'blocked' ? 'waiting' : 'idle';
+          return [{
+            id,
+            name: agent.name.replace(/[\/\\\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 32) || 'AI teammate',
+            character: agent.character,
+            status
+          }];
+        });
+        void window.cth.setOrgPresence(teamPresence);
         const present = new Set(agents.map((a) => a.id));
         for (const id of Array.from(runtimes.keys())) {
           if (!present.has(id)) removeCharacter(id);
@@ -1584,7 +1620,145 @@ export function OfficeFloor() {
         }
       };
 
+      // Remote guests subscribe through a separate volatile projection. Their
+      // namespaced IDs, guest seat claims, and no-op click handler keep them out
+      // of the durable local-agent/PTY lifecycle. The DTO contains display-only
+      // state; no prompts, paths, terminal data, or credentials reach this code.
+      const remoteId = (peerId: string, agentId: string) => `remote:${peerId}:${agentId}`;
+      const labelFor = (agent: RemotePresenceAgent, peer: RemotePresencePeer) =>
+        `${agent.name} · ${peer.name}`;
+      const claimRemoteSeat = (): number | null => {
+        for (let i = 1; i < seatTiles.length; i++) {
+          if (!seatClaims.has(i) && !remoteSeatClaims.has(i)) {
+            remoteSeatClaims.add(i);
+            return i;
+          }
+        }
+        return null;
+      };
+      const removeRemoteCharacter = (id: string) => {
+        const remote = remoteRuntimes.get(id);
+        if (!remote) return;
+        remoteSeatClaims.delete(remote.seatIndex);
+        remote.label.parent?.removeChild(remote.label);
+        remote.label.destroy();
+        remote.character.hide(0);
+        setTimeout(() => remote.character.destroy(), 700);
+        remoteRuntimes.delete(id);
+      };
+      const applyRemoteState = (agent: RemotePresenceAgent, remote: RemoteRuntime) => {
+        if (remote.status === agent.status) return;
+        remote.status = agent.status;
+        const c = remote.character;
+        c.setBaseAlpha(agent.status === 'offline' ? 0.45 : 1);
+        c.setStatusGlyph('none');
+        if (agent.status === 'working') {
+          c.sitAtDesk(true);
+          c.showThought('Working');
+        } else if (agent.status === 'waiting') {
+          c.sitAtDesk(false);
+          c.showThought('Waiting');
+        } else {
+          c.hideThought();
+          c.sitAtDesk(true);
+        }
+      };
+      const addRemoteCharacter = async (agent: RemotePresenceAgent, peer: RemotePresencePeer, id: string) => {
+        const seatIndex = claimRemoteSeat();
+        if (seatIndex == null) return;
+        let frames: Texture[][];
+        let loadedCharacter = agent.character;
+        try {
+          frames = await theme.cast.getFrames(agent.character);
+        } catch (error) {
+          remoteSeatClaims.delete(seatIndex);
+          console.warn('[office] could not load remote guest character frames', error);
+          return;
+        }
+        // The peer may leave, or the scene may be remounted, while sprite frames load.
+        let currentPeer = getRemotePresence().find((p) => p.id === peer.id);
+        let currentAgent = currentPeer?.agents.find((a) => remoteId(peer.id, a.id) === id);
+        if (mountIdRef.current !== mountId || !currentPeer || !currentAgent) {
+          remoteSeatClaims.delete(seatIndex);
+          return;
+        }
+        // A fresh presence update can arrive while frames load. Render its current
+        // display state immediately instead of waiting for another update event.
+        if (currentAgent.character !== agent.character) {
+          try {
+            frames = await theme.cast.getFrames(currentAgent.character);
+            loadedCharacter = currentAgent.character;
+          } catch (error) {
+            remoteSeatClaims.delete(seatIndex);
+            console.warn('[office] could not load updated remote guest character frames', error);
+            return;
+          }
+          if (mountIdRef.current !== mountId || !getRemotePresence().some((p) =>
+            p.id === peer.id && p.agents.some((a) => remoteId(p.id, a.id) === id))) {
+            remoteSeatClaims.delete(seatIndex);
+            return;
+          }
+        }
+        const latestPeer = getRemotePresence().find((p) => p.id === peer.id);
+        const latestAgent = latestPeer?.agents.find((a) => remoteId(peer.id, a.id) === id);
+        if (mountIdRef.current !== mountId || !latestPeer || !latestAgent) {
+          remoteSeatClaims.delete(seatIndex);
+          return;
+        }
+        if (latestAgent.character !== loadedCharacter) {
+          remoteSeatClaims.delete(seatIndex);
+          void addRemoteCharacter(latestAgent, latestPeer, id);
+          return;
+        }
+        currentPeer = latestPeer;
+        currentAgent = latestAgent;
+        const seatTile = seatTiles[seatIndex];
+        const member = theme.cast.byName[currentAgent.character];
+        const character = new Character({
+          agentId: id,
+          mapRenderer,
+          frames,
+          seatTile,
+          seatDirection: facingForSeat(seatTile),
+          spawnTile: entrance,
+          glowColor: hexToNumber(member.shirt),
+          onClick: () => { /* guests are not selectable local agents */ }
+        });
+        character.show(charLayer);
+        character.sitAtDesk(true);
+        const label = new Text({
+          text: labelFor(currentAgent, currentPeer),
+          style: { fontFamily: 'monospace', fontSize: 8, fill: 0xf2ead8, stroke: { color: 0x20242b, width: 2 }, align: 'center' }
+        });
+        label.anchor.set(0.5, 1);
+        label.eventMode = 'none';
+        charLayer.addChild(label);
+        const runtime: RemoteRuntime = { character, label, seatIndex, status: 'idle' };
+        remoteRuntimes.set(id, runtime);
+        applyRemoteState(currentAgent, runtime);
+      };
+      const syncRemotePresence = () => {
+        const guests = getRemotePresence().flatMap((peer) => peer.agents.map((agent) => ({ peer, agent, id: remoteId(peer.id, agent.id) })));
+        const present = new Set(guests.map((guest) => guest.id));
+        for (const id of [...remoteRuntimes.keys()]) if (!present.has(id)) removeRemoteCharacter(id);
+        for (const { peer, agent, id } of guests) {
+          const runtime = remoteRuntimes.get(id);
+          if (!runtime && !remotePending.has(id)) {
+            remotePending.add(id);
+            void addRemoteCharacter(agent, peer, id).finally(() => remotePending.delete(id));
+          }
+          else if (runtime) {
+            runtime.label.text = labelFor(agent, peer);
+            applyRemoteState(agent, runtime);
+          }
+        }
+      };
+
       syncAgents();
+      syncRemotePresence();
+      (app as any).__offRemotePresence = subscribeRemotePresence(syncRemotePresence);
+      (app as any).__offOrgPresence = window.cth.onOrgPresence((snapshot) => publishRemotePresence(snapshot));
+      void window.cth.getOrgPresence().then((snapshot) => publishRemotePresence(snapshot)).catch(() => undefined);
 
       let lastSelected: string | null = useStore.getState().selectedId;
       const unsubscribe = useStore.subscribe((s, prev) => {
@@ -1686,6 +1860,13 @@ export function OfficeFloor() {
           rt.character.setBubbleZoom(zoom);
           rt.character.update(dt);
         }
+        for (const remote of remoteRuntimes.values()) {
+          remote.character.setBubbleZoom(zoom);
+          remote.character.update(dt);
+          const p = remote.character.getPixelPosition();
+          remote.label.position.set(p.x, p.y - 27);
+          remote.label.scale.set(1 / Math.max(zoom, 1));
+        }
         updateCafeteria(dt);
         updateCoffeeRuns(dt);
         updateErrands(dt);
@@ -1760,6 +1941,8 @@ export function OfficeFloor() {
         (a as any).__glRecovery?.();
         (a as any).__resize?.disconnect?.();
         try { (a as any).__unsub?.(); } catch { /* noop */ }
+        try { (a as any).__offRemotePresence?.(); } catch { /* noop */ }
+        try { (a as any).__offOrgPresence?.(); } catch { /* noop */ }
         try { (a as any).__offMessage?.(); } catch { /* noop */ }
         try { clearInterval((a as any).__taskBoardPoll); } catch { /* noop */ }
         safeDestroy(a);
@@ -1771,15 +1954,16 @@ export function OfficeFloor() {
 
   return (
     <div
-      ref={hostRef}
       style={{
+        position: 'relative',
         width: '100%', height: '100%',
-        boxShadow: 'var(--cth-panel-border)',
-        overflow: 'hidden',
-        imageRendering: 'pixelated',
+        overflow: 'hidden', boxShadow: 'var(--cth-panel-border)',
         background: hex(colors.ink[900]),
       }}
-    />
+    >
+      <div ref={hostRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', imageRendering: 'pixelated' }} />
+      <SharedOfficeRoster />
+    </div>
   );
 }
 

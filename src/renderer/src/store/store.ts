@@ -12,7 +12,7 @@ import {
   finishCurrentHire,
   type HireReviewQueue
 } from '@shared/hireQueue';
-import { DEFAULT_ORG_TRIGGER, type OrgTriggerConfig, type WebhookTrigger } from '@shared/triggers';
+import { DEFAULT_ORG_TRIGGER, shouldShowTriggerHistory, type OrgTriggerConfig, type WebhookTrigger } from '@shared/triggers';
 import { isCompactionCommand } from '@shared/providerAutomation';
 import { preferredAgentRole } from '@shared/agentRole';
 import { isInboxNudge } from '@shared/hiveNudge';
@@ -1039,10 +1039,13 @@ export function selectedAgent(s: State): Agent | undefined {
   return s.agents.find(a => a.id === s.selectedId);
 }
 
-/** Whether the Command Center's Trigger History tab has anything to be about
- *  yet: an organisation key is set, or at least one webhook exists. Derived from
- *  the two mirrors rather than stored beside them, so it cannot fall out of step
- *  with the thing it describes. Use as `useStore(triggerHistoryVisible)`. */
+/** Whether webhook or teammate activity can appear in Trigger History. Derived
+ *  from live config rather than stored state so approval history remains reachable. */
 export function triggerHistoryVisible(s: State): boolean {
-  return s.webhookTriggers.length > 0 || s.orgTrigger.apiKey.trim() !== '';
+  return shouldShowTriggerHistory({
+    webhookCount: s.webhookTriggers.length,
+    sharedOfficeEnabled: s.orgTrigger.enabled,
+    officeId: s.orgTrigger.officeId,
+    hasLegacyCredential: s.orgTrigger.apiKeySet
+  });
 }

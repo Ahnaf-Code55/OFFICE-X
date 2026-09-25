@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { agentModels, type HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import {
-  CLONE_NODE_BLURB,
   DEFAULT_TRIGGER_MODE,
   DEFAULT_WEBHOOK_SCHEMA,
+  ORG_CONNECTION_MODES,
+  PEER_CONTROL_LEVELS,
   TRIGGER_MODES,
   type OrgTriggerConfig,
   type TriggerMode,
@@ -90,10 +91,10 @@ const slackLabelStyle: CSSProperties = {
 /** The exact connect walkthrough shown behind the i icon. Steps 6 & 7 spell out
  *  the both-lists requirement: subscribe to message.channels / message.groups in
  *  BOTH "Subscribe to bot events" AND "Subscribe to events on behalf of users". */
-const SLACK_CONNECT_STEPS = `Connect Munder Difflin to Slack
+const SLACK_CONNECT_STEPS = `Connect OFFICE-X to Slack
 
 1. api.slack.com/apps -> Create New App -> From scratch. Name it
-   "Munder Difflin" and pick your workspace.
+   "OFFICE-X" and pick your workspace.
 2. Basic Information -> Signing Secret -> copy it into the
    "Signing secret" field here.
 3. OAuth & Permissions -> Bot Token Scopes: add
@@ -115,7 +116,7 @@ const SLACK_CONNECT_STEPS = `Connect Munder Difflin to Slack
      message.channels
      message.groups
 8. Save Changes, reinstall if Slack prompts, then invite the bot
-   to your channel:  /invite @MunderDifflin`;
+   to your channel:  /invite @OFFICE-X`;
 
 /** The request/response contract shown behind the webhook i icon. Every webhook
  *  shares one server and one tunnel and is told apart by its id in the path, so
@@ -424,10 +425,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [showWebhookHelp, setShowWebhookHelp] = useState(false);
 
-  // --- Organisation trigger (peer messaging; configuration only for now) ------
+  // --- Shared Office connection ----------------------------------------------
   const orgTrigger = useStore((s) => s.orgTrigger);
   const setOrgTriggerStore = useStore((s) => s.setOrgTrigger);
-  const [showOrgKey, setShowOrgKey] = useState(false);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgNote, setOrgNote] = useState('');
 
@@ -737,6 +737,19 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setTimeout(() => setOrgNote(''), 1500);
     } catch (e) {
       setOrgNote(e instanceof Error ? e.message : String(e));
+    } finally { setOrgBusy(false); }
+  };
+
+  const clearLegacyOrgCredential = async () => {
+    setOrgBusy(true); setOrgNote('');
+    try {
+      const result = await window.cth.clearOrgApiKey();
+      if (!result.ok) { setOrgNote(t('settings.connections.credentialClearFailed')); return; }
+      setOrgTriggerStore({ ...useStore.getState().orgTrigger, apiKeySet: false });
+      setOrgNote(t('settings.connections.credentialCleared'));
+      setTimeout(() => setOrgNote(''), 2000);
+    } catch (error) {
+      setOrgNote(error instanceof Error ? error.message : String(error));
     } finally { setOrgBusy(false); }
   };
 
@@ -1811,8 +1824,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
                       <div style={sectionRule} />
 
-                      {/* Organisation trigger — teammates messaging this clone node.
-                          Persisted + mirrored; no transport reads the key yet. */}
+                      {/* Shared Office applies this device's inbound connection policy. */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         <div style={sectionHeadTight}>
                           {t('settings.connections.organisation')}
@@ -1836,31 +1848,88 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           </PixelButton>
                         </div>
 
-                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <span style={slackLabelStyle}>{t('settings.connections.apiKey')}</span>
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <input
-                              type={showOrgKey ? 'text' : 'password'}
-                              value={orgTrigger.apiKey}
-                              onChange={(e) => { void applyOrg({ ...orgTrigger, apiKey: e.target.value }, false); }}
-                              onBlur={() => { void applyOrg(orgTrigger); }}
-                              placeholder={t('settings.connections.orgKeyPlaceholder')}
-                              style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
-                            />
-                            <PixelButton
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => setShowOrgKey((v) => !v)}
-                              disabled={!orgTrigger.apiKey}
-                            >
-                              {showOrgKey ? t('common.hide') : t('common.show')}
+                        {orgTrigger.apiKeySet && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{t('settings.connections.credentialSaved')}</span>
+                            <PixelButton variant="ghost" size="sm" onClick={() => { void clearLegacyOrgCredential(); }} disabled={orgBusy}>
+                              {t('settings.connections.clearCredential')}
                             </PixelButton>
                           </div>
+                        )}
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 260 }}>
+                          <span style={slackLabelStyle}>{t('settings.connections.transportMode')}</span>
+                          <select
+                            value={orgTrigger.connectionMode}
+                            onChange={(e) => { void applyOrg({ ...orgTrigger, connectionMode: e.target.value as OrgTriggerConfig['connectionMode'] }); }}
+                            style={slackInputStyle}
+                          >
+                            {ORG_CONNECTION_MODES.map((mode) => (
+                              <option key={mode} value={mode}>{t(`settings.connections.connectionMode.${mode}`)}</option>
+                            ))}
+                          </select>
                         </label>
 
-                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                          {CLONE_NODE_BLURB}
-                        </span>
+                        {orgTrigger.connectionMode === 'managed-relay' && (
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 420 }}>
+                            <span style={slackLabelStyle}>{t('settings.connections.managedRelayEndpoint')}</span>
+                            <input
+                              type="text"
+                              value={orgTrigger.managedRelayEndpoint}
+                              onChange={(e) => { void applyOrg({ ...orgTrigger, managedRelayEndpoint: e.target.value }, false); }}
+                              onBlur={() => { void applyOrg(orgTrigger); }}
+                              placeholder={t('settings.connections.managedRelayEndpointPlaceholder')}
+                              style={slackInputStyle}
+                            />
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              {t('orgSection.managedRelayEndpointHint')}
+                            </span>
+                          </label>
+                        )}
+
+                        {orgTrigger.connectionMode === 'self-hosted' && (
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 420 }}>
+                            <span style={slackLabelStyle}>{t('settings.connections.selfHostedEndpoint')}</span>
+                            <input
+                              type="text"
+                              value={orgTrigger.selfHostedEndpoint}
+                              onChange={(e) => { void applyOrg({ ...orgTrigger, selfHostedEndpoint: e.target.value }, false); }}
+                              onBlur={() => { void applyOrg(orgTrigger); }}
+                              placeholder={t('settings.connections.selfHostedUrlPlaceholder')}
+                              style={slackInputStyle}
+                            />
+                          </label>
+                        )}
+
+                        {orgTrigger.connectionMode === 'peer-to-peer' && (
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 420 }}>
+                            <span style={slackLabelStyle}>{t('settings.connections.peerToPeerEndpoint')}</span>
+                            <input
+                              type="text"
+                              value={orgTrigger.peerToPeerEndpoint}
+                              onChange={(e) => { void applyOrg({ ...orgTrigger, peerToPeerEndpoint: e.target.value }, false); }}
+                              onBlur={() => { void applyOrg(orgTrigger); }}
+                              placeholder={t('settings.connections.peerToPeerEndpointPlaceholder')}
+                              style={slackInputStyle}
+                            />
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              {t('orgSection.peerToPeerEndpointHint')}
+                            </span>
+                          </label>
+                        )}
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 300 }}>
+                          <span style={slackLabelStyle}>{t('settings.connections.defaultPeerControl')}</span>
+                          <select
+                            value={orgTrigger.defaultControlLevel}
+                            onChange={(e) => { void applyOrg({ ...orgTrigger, defaultControlLevel: e.target.value as OrgTriggerConfig['defaultControlLevel'] }); }}
+                            style={slackInputStyle}
+                          >
+                            {PEER_CONTROL_LEVELS.map((level) => (
+                              <option key={level.value} value={level.value}>{t(`settings.connections.peerControl.${level.value}`)}</option>
+                            ))}
+                          </select>
+                        </label>
 
                         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 200 }}>
                           <span style={slackLabelStyle}>{t('settings.connections.mode')}</span>

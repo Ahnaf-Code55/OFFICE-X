@@ -31,7 +31,7 @@ import { FullscreenTerminal } from '@/components/FullscreenTerminal';
 import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
 import { IdePanel } from '@/ide/IdePanel';
 import { useHoldOptionToTalk } from '@/freeflow/holdOption';
-import brandLogo from '@brand/logo.png?url';
+import brandLogo from './assets/brand/officex-logo.svg?url';
 
 // Injected at build time from package.json (see electron.vite.config.ts).
 declare const __APP_VERSION__: string;
@@ -143,7 +143,7 @@ export function App() {
   // Quit warning subscription
   useEffect(() => window.cth.onCloseRequested((info) => setQuitWarn(info)), []);
 
-  // Shareable hires: a validated manifest arriving via the munderdifflin://
+  // Shareable hires: a validated manifest arriving via the officex://
   // deep link (or file import) pre-fills the Add-Agent modal. Never spawns by itself.
   const enqueuePendingHires = useStore(s => s.enqueuePendingHires);
   const closeAddAgentReview = () => {
@@ -297,7 +297,7 @@ export function App() {
       >
         <img
           src={brandLogo}
-          alt="Munder Difflin"
+          alt="OFFICE-X"
           style={{ height: 20, width: 'auto', display: 'block' }}
         />
         {/* v0.3.7: the version is no longer inert text — it doubles as the

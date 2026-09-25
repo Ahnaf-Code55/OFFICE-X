@@ -190,7 +190,7 @@ test('failures reach Settings verbatim, same as the tooltip', () => {
 });
 
 test('manual update with a direct installer reads as a download, not a page to hunt on', () => {
-  const { manualInstallSteps } = loadTs('src/shared/updateState.ts');
+  const { manualDownloadUrl, manualInstallSteps } = loadTs('src/shared/updateState.ts');
   const v = describeUpdate(
     { state: 'available-manual', version: '0.4.5', url: 'https://x', downloadUrl: 'https://x/a.dmg' },
     '0.4.4'
@@ -198,6 +198,9 @@ test('manual update with a direct installer reads as a download, not a page to h
   assert.match(v.label, /download/);
   assert.equal(v.action, 'manual');
   assert.equal(v.tone, 'ready');
+  assert.equal(manualDownloadUrl({ state: 'available-manual', version: '0.4.5', url: 'https://x', downloadUrl: 'https://x/a.dmg' }, 'linux', 'x64'), 'https://x/a.dmg');
+  assert.equal(manualDownloadUrl({ state: 'available-manual', version: '0.4.5', url: 'https://release.example/0.4.5' }, 'linux', 'x64'), 'https://release.example/0.4.5');
+  assert.equal(manualDownloadUrl({ state: 'available-manual', version: '0.4.5' }, 'linux', 'x64'), null);
   for (const p of ['darwin', 'win32', 'linux']) {
     const s = manualInstallSteps(p);
     assert.equal(s.steps.length, 2);

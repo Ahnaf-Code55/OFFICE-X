@@ -1,5 +1,4 @@
-- **The interface speaks Chinese and Arabic.** Set it in Settings.
-- **Updates install themselves.** Download, restart, done.
-- **Fonts ship inside the app.** No Google Fonts fetch on launch.
-- **Hardened how engine commands launch.**
-- **Settings has one Save button.** Connections get their own tab.
+- **Shared Office.** Verify teammate devices and see shared presence.
+- **Owner-set access.** Approve tasks or grant delegated or full control.
+- **Terminal output is opt-in** per teammate and local agent.
+- **Three routes.** Connect peer-to-peer, through OQVIAN's configured relay, or a self-hosted relay.

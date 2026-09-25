@@ -8,8 +8,18 @@ const { join } = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
 const { readHireManifestFiles } = loadTs('src/main/hire.ts');
+const { HIRE_SPEC_V1, LEGACY_HIRE_SPEC_V1, validateHireManifest } = loadTs('src/shared/hire.ts');
 
 const manifest = (name) => ({ spec: 'munder-difflin/hire@1', name });
+
+test('OFFICE-X hires use the new spec tag and legacy upstream manifests remain importable', () => {
+  assert.equal(HIRE_SPEC_V1, 'office-x/hire@1');
+  for (const spec of [HIRE_SPEC_V1, LEGACY_HIRE_SPEC_V1]) {
+    const result = validateHireManifest({ spec, name: 'Compatible hire' });
+    assert.equal(result.ok, true);
+    assert.equal(result.manifest.spec, HIRE_SPEC_V1, 'import normalizes the manifest to the OFFICE-X tag');
+  }
+});
 
 test('batch import keeps every valid manifest and reports invalid files independently', () => {
   const dir = mkdtempSync(join(tmpdir(), 'munder-hire-import-'));

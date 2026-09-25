@@ -1,27 +1,42 @@
-# Munder Difflin — Spec
+# OFFICE-X — Product and Terminal Specification
 
-A desktop control room for the Claude Code agents you already run in terminals. Each agent is a Sims-style avatar in a shared 2D workspace; you can watch them work, send them commands, and configure their goals/skills/MCP from one place.
+OFFICE-X is an OQVIAN desktop office for local AI agents, extended with an
+optional Shared Office where real teammates can see presence, request work,
+steer permitted agents, and share terminal control under owner-defined access.
+The application mark remains OFFICE-X; the OQVIAN company mark is separate.
+
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) and the current source code
+describe implemented behavior. The sections below are an inherited product
+design sketch and retain historical implementation assumptions (including
+tmux-based terminal attachment); do not treat those details as descriptions of
+the current implementation.
 
 ---
 
 ## 1. Product shape
 
-### What it is
-- **Electron desktop app**, macOS-first.
-- Renders a single 2D canvas ("the floor") populated by **avatars**, one per registered Claude Code session.
-- Each avatar represents a real `claude` process running in a tmux pane somewhere on the machine.
-- Avatars **walk around**, visit stations (file shelf, web portal, terminal station, etc.) based on what tool the underlying agent is using.
-- A side panel shows the raw terminal stream for whichever avatar is selected. A command bar lets you type into that agent.
+### Current product shape
+- Cross-platform Electron app with a local multi-agent office and terminal controls.
+- The local floor and the optional Shared Office are distinct surfaces: shared presence does not
+  expose local process or terminal state.
+- Shared Office identities are device-based. Each teammate verifies and pins the other's invite
+  fingerprint; each receiving device sets its own inbound access level.
+- Task requests require owner approval. Delegated prompts and full terminal control are gated by
+  the local member access level. Terminal output sharing is separately enabled per teammate and
+  agent.
+- Direct connections require a reachable public route. Relay connections use Circuit Relay v2;
+  the relay transports encrypted peer connections but does not grant trust or access.
 
-### What it explicitly is NOT (for MVP)
-- Not a replacement for the `claude` CLI. The CLI is the runtime; this app is a viewer/controller.
-- Not an agent-to-agent message bus. Avatars don't hand things off to each other yet. (Deferred to v2.)
-- Not a remote dashboard. Local sessions only. No web access, no auth.
-- Not a code editor. We show terminal output, not source files.
+### Boundaries
+- The app does not replace the agent CLIs; they remain the runtime.
+- Shared Office membership is pinned per device and office; a relay address alone never authorizes a
+  peer.
+- Shared terminal output is opt-in, held in memory while streamed, and excluded from trigger history.
+- For current trust, transport, and data-flow details, see the architecture guide and README.
 
 ---
 
-## 2. Architecture: the two data planes
+## 2. Inherited architecture sketch: the two local data planes
 
 This is the load-bearing design decision. Everything else follows from it.
 

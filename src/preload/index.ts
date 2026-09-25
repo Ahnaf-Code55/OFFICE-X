@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import type { AgentProvider } from '../shared/agentProvider';
 import type { HireManifest } from '../shared/hire';
 export type { HireManifest } from '../shared/hire';
+import type { TeamMemberInvite, TeamMemberPinInput, TeamMemberSummary } from '../shared/teamProtocol';
+import type { TeamPresenceAgent, TeamPresenceSnapshot } from '../shared/teamPresence';
 import type { IntegrationRecord, IntegrationTemplate } from '../shared/integrations';
 export type { IntegrationRecord, IntegrationTemplate } from '../shared/integrations';
 import type { UpdateStatus } from '../shared/updateState';
@@ -922,7 +924,7 @@ const api = {
   },
 
   // ─── Shareable hires (deep link / file import) ────────────────────────────
-  /** Fired when a validated hire manifest arrives via the munderdifflin://
+  /** Fired when a validated hire manifest arrives via the officex://
    *  deep link. The renderer opens the Add-Agent modal pre-filled — import
    *  never spawns anything by itself. */
   onHireImport: (cb: (manifest: HireManifest) => void): (() => void) => {
@@ -1231,9 +1233,53 @@ const api = {
     ipcRenderer.invoke('webhooks:status'),
 
   // ─── Triggers: organisation (clone-node peer messaging) ─────────────────────
-  /** PERSISTENCE ONLY — the peer transport does not exist yet, so setting this
-   *  stores the key and mode and starts nothing. */
+  /** Read the non-secret shared-office connection preferences. */
   getOrgTrigger: (): Promise<OrgTriggerConfig> => ipcRenderer.invoke('org:getTrigger'),
+  /** Removes a legacy team credential; shared-office transport does not use it. */
+  clearOrgApiKey: (): Promise<{ ok: boolean; apiKeySet?: boolean }> => ipcRenderer.invoke('org:clearApiKey'),
+  /** Public half of this device's OFFICE-X identity. Private keys remain in the
+   *  encrypted main-process secret store and never cross this bridge. */
+  getOrgIdentity: (): Promise<{
+    ok: boolean; error?: string; officeId?: string; deviceId?: string;
+    displayName?: string; signingPublicKey?: string; encryptionPublicKey?: string; fingerprint?: string;
+    directEndpoint?: string;
+  }> => ipcRenderer.invoke('org:getIdentity'),
+  getOrgTransportStatus: (): Promise<{ running: boolean; connectionConfigured: boolean; peerId?: string; error?: string }> =>
+    ipcRenderer.invoke('org:transportStatus'),
+  getOrgPresence: (): Promise<TeamPresenceSnapshot> => ipcRenderer.invoke('org:getPresence'),
+  setOrgPresence: (agents: TeamPresenceAgent[]): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('org:updatePresence', agents),
+  sendOrgTaskRequest: (memberId: string, title: string, message: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('org:sendTaskRequest', { memberId, title, message }),
+  sendOrgAgentPrompt: (memberId: string, agentId: string, prompt: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('org:sendAgentPrompt', { memberId, agentId, prompt }),
+  sendOrgTerminalInput: (memberId: string, agentId: string, input: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('org:sendTerminalInput', { memberId, agentId, input }),
+  getOrgTerminalShares: (memberId: string): Promise<string[]> => ipcRenderer.invoke('org:getTerminalShares', memberId),
+  setOrgTerminalShare: (memberId: string, agentId: string, enabled: boolean): Promise<{ ok: boolean; error?: string; enabled?: boolean }> =>
+    ipcRenderer.invoke('org:setTerminalShare', { memberId, agentId, enabled }),
+  onOrgTerminalOutput: (cb: (value: { memberId: string; memberName: string; agentId: string; agentName: string; output: string; sequence: number; gap: boolean }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, value: Parameters<typeof cb>[0]) => cb(value);
+    ipcRenderer.on('org:terminalOutput', listener);
+    return () => ipcRenderer.removeListener('org:terminalOutput', listener);
+  },
+  onOrgPresence: (cb: (snapshot: TeamPresenceSnapshot) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, snapshot: TeamPresenceSnapshot) => cb(snapshot);
+    ipcRenderer.on('org:presence', listener);
+    return () => ipcRenderer.removeListener('org:presence', listener);
+  },
+  previewOrgInvite: (raw: unknown): Promise<{ ok: boolean; error?: string; invite?: TeamMemberInvite }> =>
+    ipcRenderer.invoke('org:previewInvite', raw),
+  listOrgMembers: (): Promise<TeamMemberSummary[]> => ipcRenderer.invoke('org:listMembers'),
+  setOrgOfficeId: (officeId: string): Promise<{ ok: boolean; officeId?: string; error?: string }> =>
+    ipcRenderer.invoke('org:setOfficeId', officeId),
+  pinOrgMember: (member: TeamMemberPinInput): Promise<{ ok: boolean; member?: TeamMemberSummary; error?: string }> =>
+    ipcRenderer.invoke('org:pinMember', member),
+  setOrgMemberControl: (memberId: string, controlLevel: TeamMemberPinInput['controlLevel']):
+    Promise<{ ok: boolean; controlLevel?: TeamMemberPinInput['controlLevel']; error?: string }> =>
+    ipcRenderer.invoke('org:setMemberControl', { memberId, controlLevel }),
+  revokeOrgMember: (memberId: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('org:revokeMember', memberId),
   setOrgTrigger: (cfg: OrgTriggerConfig): Promise<OrgTriggerConfig> =>
     ipcRenderer.invoke('org:setTrigger', cfg),
 

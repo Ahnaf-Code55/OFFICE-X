@@ -1,10 +1,10 @@
 # The Hive — autonomous multi-agent layer
 
-> How Munder Difflin turns a room full of independent `claude`
+> How the inherited OFFICE-X local hive turns a room full of independent agent CLI processes
 > processes into a collaborating, self-coordinating team with persistent memory,
 > a shared blackboard, and a "god" orchestrator that runs the floor.
 
-This document is the design source of truth for the agent-collaboration layer. It
+This document describes the inherited local agent-collaboration layer. It
 sits alongside [`SPEC.md`](./SPEC.md) (terminal/event plane) and
 [`DESIGN.md`](./DESIGN.md) (visual system). Code is the source of truth for what's
 *built*; this is the source of truth for what we're *building toward*.
