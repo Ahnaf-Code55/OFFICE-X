@@ -6,7 +6,7 @@ Updated: 2026-09-27 (Asia/Kuala_Lumpur)
 Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring and control their own AI agents, with reciprocal trust and owner controlled permissions.
 
 ## Current checkout
-- Source repo: `officex/shared-offices` at `0c1b5b89`; working tree was clean before this note.
+- Source repo: `officex/shared-offices` (see `git log -1`).
 - OQVIAN delivery PR: [Ahnaf-Code55/OQVIAN#1](https://github.com/Ahnaf-Code55/OQVIAN/pull/1), open and unmerged at `69b1e56`.
 - Preserve both OQVIAN and OFFICE-X branding. Linux and Windows x64 are in scope; macOS is not.
 
@@ -22,12 +22,12 @@ Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring 
 - A temporary relay previously passed an external circuit probe, but no real two-computer acceptance has been completed.
 
 ## Open findings
-- Live check on 2026-09-27: no relay or Cloudflare quick tunnel process is running; the old temporary relay hostname must be treated as stale.
-- Live check on 2026-09-27: `pacman -Q gnome-keyring` reports it missing and `org.freedesktop.secrets` is absent, although the user's earlier terminal transcript showed a successful install. Reconcile this before creating a new invite; do not store the device identity in plaintext.
+- Keyring fixed 2026-09-27: gnome-keyring installed, `org.freedesktop.secrets` store/lookup verified. App-level identity creation still unchecked.
+- Temp relay up 2026-09-27 (Node 26, persistent key `~/.local/share/officex-relay/relay.key`) behind a Cloudflare quick tunnel; external libp2p WSS dial passed. Address (dies when tunnel restarts): `/dns4/reducing-caribbean-posters-murray.trycloudflare.com/tcp/443/wss/p2p/12D3KooWSzm9JMyup878piqT7dKeRSqoxpTgU3e7c2YzD9uzcVMY`. Needs a VPS/named tunnel for permanence; relay officially wants Node 22.
 - Two-computer invitation, control, output sharing, and revocation acceptance with the friend's Bazzite device remain unverified.
 
 ## NEXT TASK
-Restore an OS-backed keyring and reachable pinned relay, then run reciprocal invite and cross-device control acceptance with the Bazzite teammate and fix any observed failure.
+Enter the relay address in Shared Office → Self-hosted on both devices, then run reciprocal invite and cross-device control acceptance with the Bazzite teammate and fix any observed failure.
 
 ## Handoff practice
 Read this note and `git log -5`, inspect only files needed for the task, and update this note with changed files, verification, open issues, and the exact next step before handing off; keep it under 40 lines and commit working steps.
