@@ -206,7 +206,9 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // path-layout problem, not a reason to drop the sandbox: codex's documented
     // `--add-dir <DIR>` makes extra directories writable alongside the workspace,
     // and the hive spawn path (hive.ts, which knows the agent dir) appends it.
-    // So: approvals off, sandbox on, hive housekeeping still works.
+    // When Codex Remote Control is enabled, index.ts moves these roots into the
+    // app-server config because the remote TUI rejects --add-dir. So: approvals
+    // off, sandbox on, hive housekeeping still works in either launch path.
     autoModeFlag: '-a never -s workspace-write',
     autoFlag: '-a never -s workspace-write',
     // Any of these on a command line means the user already chose a posture

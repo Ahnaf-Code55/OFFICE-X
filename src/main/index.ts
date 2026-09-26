@@ -103,7 +103,9 @@ import {
   CODEX_REMOTE_SOCKET_RELATIVE,
   codexRemoteAliasPath,
   codexRemoteEndpoint,
+  codexRemoteWritableRootsConfig,
   codexRemoteSocketFits,
+  moveCodexAddDirArgsToServer,
   withCodexRemoteArgs
 } from '../shared/codexRemote';
 
@@ -209,14 +211,44 @@ async function enableCodexRemoteForSpawn(
     // shellEnv's resolver mirrors PtyManager's (which is private + returns
     // {path, found}); the daemon just needs the best executable path.
     const executable = resolveCliCommand(opts.command);
-    const started = await runCodexDaemonCommand(
-      executable,
-      ['app-server', 'daemon', 'start'],
-      env
-    );
+    const remoteArgs = moveCodexAddDirArgsToServer(opts.args ?? []);
+    const agentConfig = readFileSync(join(realHome, 'config.toml'), 'utf8');
+    const writableRootsConfig = codexRemoteWritableRootsConfig(remoteArgs.writableRoots, agentConfig);
+    const rootsFingerprint = writableRootsConfig
+      ? createHash('sha256').update(writableRootsConfig).digest('hex')
+      : undefined;
+    const rootsMarker = join(alias, 'officex-remote-writable-roots.sha256');
+    let serverRootsMatch = false;
+    if (rootsFingerprint) {
+      try {
+        const markerStat = lstatSync(rootsMarker);
+        serverRootsMatch = markerStat.isFile() && !markerStat.isSymbolicLink()
+          && readFileSync(rootsMarker, 'utf8').trim() === rootsFingerprint;
+      } catch { /* first remote start or unavailable marker */ }
+    }
+    // Codex rejects --add-dir on the remote TUI. Workspace-write roots belong
+    // to the app-server. Restart once when the configured roots change (including
+    // upgrade from older OFFICE-X), then use start on later sessions so an
+    // existing remote-controlled agent is not interrupted unnecessarily. If
+    // setup fails, keep the original local args and fall back to the local TUI.
+    const daemonCommand = writableRootsConfig && !serverRootsMatch ? 'restart' : 'start';
+    const daemonArgs = ['app-server', 'daemon', daemonCommand];
+    if (writableRootsConfig) daemonArgs.push('--config', writableRootsConfig);
+    const started = await runCodexDaemonCommand(executable, daemonArgs, env);
     if (!started.ok) {
       console.warn('[codex-remote] daemon start failed; starting local TUI:', started.error);
       return false;
+    }
+    if (rootsFingerprint && !serverRootsMatch) {
+      const tempMarker = `${rootsMarker}.tmp-${randomBytes(4).toString('hex')}`;
+      try {
+        writeFileSync(tempMarker, `${rootsFingerprint}\n`, { flag: 'wx', mode: 0o600 });
+        renameSync(tempMarker, rootsMarker);
+      } catch (e) {
+        try { unlinkSync(tempMarker); } catch { /* best-effort cleanup */ }
+        console.warn('[codex-remote] could not record server writable roots:',
+          e instanceof Error ? e.message : e);
+      }
     }
     const enabled = await runCodexDaemonCommand(
       executable,
@@ -232,7 +264,7 @@ async function enableCodexRemoteForSpawn(
       return false;
     }
     opts.env = { ...(opts.env ?? {}), CODEX_HOME: alias };
-    opts.args = withCodexRemoteArgs(opts.args ?? [], codexRemoteEndpoint(alias));
+    opts.args = withCodexRemoteArgs(remoteArgs.args, codexRemoteEndpoint(alias));
     return true;
   } catch (e) {
     console.warn('[codex-remote] setup failed; starting local TUI:',

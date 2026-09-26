@@ -846,7 +846,9 @@ export class HiveManager {
               // agentProvider.ts). workspace-write only covers cwd, so the agent
               // folder (inbox/.done, memory.md, outbox) and the shared hive root
               // (research deliverables, the board for god) are added as extra
-              // writable roots. Harmless outside auto mode.
+              // writable roots. The remote-control setup moves them into the
+              // app-server config before starting a remote Codex TUI, which
+              // rejects --add-dir. The local fallback keeps these CLI args.
               for (const d of this.sandboxWritableDirs(meta, dir, root, opts.extraWritableDirs)) preArgs.push('--add-dir', d);
             }
             else if (desc.shim === 'pi') {

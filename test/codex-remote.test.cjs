@@ -8,6 +8,8 @@ const {
   codexRemoteAliasPath,
   codexRemoteEndpoint,
   codexRemoteSocketFits,
+  moveCodexAddDirArgsToServer,
+  codexRemoteWritableRootsConfig,
   withCodexRemoteArgs,
   CODEX_REMOTE_SOCKET_MAX,
   CODEX_REMOTE_SOCKET_RELATIVE
@@ -56,5 +58,47 @@ test('remote endpoint precedes both fresh and resumed Codex invocations', () => 
   assert.deepEqual(
     withCodexRemoteArgs(['--remote', endpoint, 'resume'], endpoint),
     ['--remote', endpoint, 'resume']
+  );
+});
+
+test('Codex additional roots move to server config instead of remote TUI args', () => {
+  const moved = moveCodexAddDirArgsToServer([
+    '--dangerously-bypass-hook-trust',
+    '--add-dir', '/home/user/hive agent',
+    '--model', 'gpt-6-sol',
+    '--add-dir=/home/user/hive',
+    'initial prompt'
+  ]);
+
+  assert.deepEqual(moved, {
+    args: ['--dangerously-bypass-hook-trust', '--model', 'gpt-6-sol', 'initial prompt'],
+    writableRoots: ['/home/user/hive agent', '/home/user/hive']
+  });
+  assert.equal(
+    codexRemoteWritableRootsConfig(moved.writableRoots),
+    'sandbox_workspace_write.writable_roots=["/home/user/hive agent","/home/user/hive"]'
+  );
+  assert.deepEqual(
+    withCodexRemoteArgs(moved.args, 'unix:///tmp/codex/app-server-control/app-server-control.sock'),
+    ['--remote', 'unix:///tmp/codex/app-server-control/app-server-control.sock', ...moved.args]
+  );
+});
+
+test('Codex remote root config deduplicates paths and is absent without extra roots', () => {
+  assert.equal(codexRemoteWritableRootsConfig([]), undefined);
+  assert.equal(
+    codexRemoteWritableRootsConfig(['/home/user/hive', '/home/user/hive']),
+    'sandbox_workspace_write.writable_roots=["/home/user/hive"]'
+  );
+});
+
+test('Codex remote root config preserves user writable roots from the isolated home', () => {
+  const existingConfig = `
+[sandbox_workspace_write]
+writable_roots = ["/home/user/projects", "/mnt/shared"]
+`;
+  assert.equal(
+    codexRemoteWritableRootsConfig(['/home/user/hive', '/mnt/shared'], existingConfig),
+    'sandbox_workspace_write.writable_roots=["/home/user/projects","/mnt/shared","/home/user/hive"]'
   );
 });
