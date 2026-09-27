@@ -429,10 +429,15 @@ export function OfficeFloor() {
       // Only floor 2 reserves seat 0 (CEO office) for the orchestrator.
       const GOD_SEAT = 0;
       const workerFirstSeat = selectedFloor === 2 ? 1 : 0;
+      // Floor 2's CISO / security room is the visiting teammate's office: my
+      // agents never sit there, guests fill it first.
+      const guestZone = selectedFloor === 2 ? mapRenderer.getZone('ciso-security') : undefined;
+      const guestSeats = new Set(guestZone ? seatTiles.flatMap((t, i) =>
+        t.x >= guestZone.x && t.x < guestZone.x + guestZone.width && t.y >= guestZone.y && t.y < guestZone.y + guestZone.height ? [i] : []) : []);
       const claimSeat = (agent: Agent): number | null => {
         if (agent.isGod) { seatClaims.add(GOD_SEAT); return GOD_SEAT; }
         for (let i = workerFirstSeat; i < seatTiles.length; i++) {
-          if (!seatClaims.has(i) && !remoteSeatClaims.has(i)) { seatClaims.add(i); return i; }
+          if (!guestSeats.has(i) && !seatClaims.has(i) && !remoteSeatClaims.has(i)) { seatClaims.add(i); return i; }
         }
         return null;
       };
@@ -1667,7 +1672,9 @@ export function OfficeFloor() {
       const labelFor = (agent: RemotePresenceAgent, peer: RemotePresencePeer) =>
         `${agent.name} · ${peer.name}`;
       const claimRemoteSeat = (): number | null => {
-        for (let i = workerFirstSeat; i < seatTiles.length; i++) {
+        // ponytail: guest's first-listed agent (their main) gets desk-ciso; add an isGod presence field if order ever differs.
+        for (const i of [...guestSeats, ...seatTiles.keys()]) {
+          if (i < workerFirstSeat) continue;
           if (!seatClaims.has(i) && !remoteSeatClaims.has(i)) {
             remoteSeatClaims.add(i);
             return i;
