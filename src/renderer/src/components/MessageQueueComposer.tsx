@@ -152,6 +152,15 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
     setAttachments([]);
   };
 
+  // Steer: hand a busy agent the note at its next tool boundary instead of
+  // waiting for the turn to end (rides the hook protocol, nothing is typed).
+  const steerIt = () => {
+    if (!text.trim()) return;
+    void window.cth.controlSteer(agent.id, text);
+    void window.cth.trackMessageSent('composer');
+    setText('');
+  };
+
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (isComposingKey(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -387,6 +396,9 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
             </span>
           </PixelButton>
           {freeflowEnabled && <FreeFlowButton agentId={agent.id} hasGroqKey={hasGroqKey} />}
+          {!idle && <PixelButton variant="secondary" size="sm" onClick={steerIt} disabled={!text.trim()} title={t('agentControl.steerTip')}>
+            {t('agentControl.steer')}
+          </PixelButton>}
           <PixelButton variant="primary" size="sm" onClick={queueIt} disabled={!canSend}>
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
               {t('commandBar.send')} <Icon name="arrow-right" />
