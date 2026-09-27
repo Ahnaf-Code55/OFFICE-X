@@ -37,3 +37,9 @@ test('rejects private, loopback, reserved, DNS, malformed, and invalid-port rout
   assert.equal(teamListenAddressForEndpoint('/ip4/192.168.1.4/tcp/4111'), undefined);
   assert.equal(teamEndpointForPeer('/ip4/1.1.1.1/tcp/4111', 'bad'), undefined);
 });
+
+test('accepts Tailscale addresses and plain IP:port', () => {
+  assert.equal(normalizePublicTeamEndpoint('/ip4/100.111.20.112/tcp/4001'), '/ip4/100.111.20.112/tcp/4001');
+  assert.equal(normalizePublicTeamEndpoint(' 100.75.4.60:4001 '), '/ip4/100.75.4.60/tcp/4001');
+  assert.equal(normalizePublicTeamEndpoint('192.168.1.4:4001'), '');
+});

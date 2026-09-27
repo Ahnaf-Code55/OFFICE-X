@@ -15,8 +15,11 @@ function normalizeRelayMultiaddr(value: unknown): string {
 /** Public literal-IP TCP endpoint advertised in a peer-to-peer invite. */
 export function normalizePublicTeamEndpoint(value: unknown): string {
   if (typeof value !== 'string') return '';
-  const raw = value.trim();
+  let raw = value.trim();
   if (!raw) return '';
+  // Accept the plain "IP:port" people actually type.
+  const plain = /^(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})$/.exec(raw);
+  if (plain) raw = `/ip4/${plain[1]}/tcp/${plain[2]}`;
   if (raw.length > 512 || /[\u0000-\u0020\u007f]/.test(raw)) return '';
   const parts = raw.slice(1).split('/');
   if (!raw.startsWith('/') || parts.length !== 4) return '';
@@ -41,12 +44,12 @@ export function teamEndpointForPeer(endpoint: string, peerId: string): string | 
   return `${normalized}/p2p/${peerId}`;
 }
 
+/** Tailscale (100.64.0.0/10) counts as reachable: it's the easy way to link two offices without port forwarding. */
 export function isPublicTeamRouteAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 4) {
     const [a, b, c] = address.split('.').map(Number);
     return !(a === 0 || a === 10 || a === 127 || a >= 224
-      || (a === 100 && b >= 64 && b <= 127)
       || (a === 169 && b === 254)
       || (a === 172 && b >= 16 && b <= 31)
       || (a === 192 && b === 0 && (c === 0 || c === 2))
