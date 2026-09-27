@@ -262,7 +262,12 @@ export class HookServer {
       // path bypassed terminal-draft/HITL safety and could spend credits while a
       // user was answering a question. Inbox files remain durable; the renderer
       // wakes the agent later through its guarded idle-only delivery path.
-      this.notify(agentId ?? 'Agent', 'finished — idle');
+      // Toast the main agent only, once per 5 min: workers and sub-agents finish constantly.
+      const now = Date.now();
+      if (event === 'Stop' && now - (this.lastIdleToast.get(agentId) ?? 0) > 300_000) {
+        this.lastIdleToast.set(agentId, now);
+        this.notify(agentId, 'finished — idle');
+      }
       this.emit(agentId, event, p);
       return {};
     }
@@ -367,6 +372,8 @@ export class HookServer {
   /** Fire a native desktop notification — gated on the user's `notifications`
    *  setting. Only the OS toast is gated; the hive:hookEvent emit is always sent
    *  so avatars/UI stay live regardless. Best-effort: never throw into the hook. */
+  private readonly lastIdleToast = new Map<string, number>();
+
   private notify(title: string, body: string): void {
     if (!this.getConfig().notifications) return;
     try {
