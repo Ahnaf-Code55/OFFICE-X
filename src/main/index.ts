@@ -6224,7 +6224,7 @@ function nudgeWorker(ptyId: string, ids: string[] = []): void {
       const submitted = ptyManager.write(ptyId, '\r');
       if (!submitted.ok) console.warn(`[worker-wake] submit failed for ${ptyId}: ${submitted.error}`);
     } catch (e) { console.error('[worker-wake] submit threw:', e); }
-  }, 140);
+  }, 400); // past Codex's ~120ms paste-burst window, or its Enter becomes a newline
 }
 
 /** Main-process inbox-wake beat (issue #151, fix A): the renderer's idle nudge

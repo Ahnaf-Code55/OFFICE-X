@@ -139,7 +139,11 @@ function submitToPty(
     // stray "\n" doesn't submit early (#24). Single-line text (nudges, slash
     // commands) is sent raw — some TUIs (Antigravity's agy) treat the paste
     // markers as literal input and never submit, so skipping them is more robust.
-    const payload = text.includes('\n') ? `\x1b[200~${text}\x1b[201~` : text;
+    // Codex always gets the paste markers: raw typing trips its paste-burst detector,
+    // which turns an Enter within ~120ms of the last char into a newline (the message
+    // then sits in its prompt as a "draft" forever). Hence its longer pause too.
+    const codex = provider === 'codex';
+    const payload = codex || text.includes('\n') ? `\x1b[200~${text}\x1b[201~` : text;
     // writePty NEVER rejects for a dead pty — it resolves { ok:false, error:
     // 'no pty: …' } — so an unchecked await here made every failed delivery look
     // successful (the queue-drain then destroyed the message it had already
@@ -147,7 +151,7 @@ function submitToPty(
     // immune (the prev.catch above absorbs it for the next writer).
     const wrote = await window.cth.writePty(ptyId, payload);
     if (!wrote?.ok) throw new Error(wrote?.error ?? `pty write failed: ${ptyId}`);
-    await new Promise((r) => setTimeout(r, 140));
+    await new Promise((r) => setTimeout(r, codex ? 400 : 140));
     const submitted = await window.cth.writePty(ptyId, '\r');
     if (!submitted?.ok) throw new Error(submitted?.error ?? `pty write failed: ${ptyId}`);
     await new Promise((r) => setTimeout(r, settleMs));
