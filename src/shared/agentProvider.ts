@@ -302,10 +302,10 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     canReceiveInbox: true,
     // Keep the TUI alive after processing the hive protocol seed.
     initialPromptFlag: '-i',
-    recommendedOrchestratorModel: 'pro',
+    recommendedOrchestratorModel: 'pro', // documented Gemini CLI --model alias; follows current Pro
     resumeFlag: '--resume',
     installCommand: 'npm install -g @google/gemini-cli',
-    docsUrl: 'https://github.com/google-gemini/gemini-cli'
+    docsUrl: 'https://geminicli.com/docs/cli/cli-reference/'
   },
   {
     id: 'antigravity',

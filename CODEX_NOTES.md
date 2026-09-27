@@ -33,17 +33,26 @@ Sources: [Bazzite AppImage guide](https://docs.bazzite.gg/Installing_and_Managin
 - Added `src/main/voice/stt.ts` with exactly `transcribe(pcm16kMono: Int16Array): Promise<string>` and `src/main/voice/tts.ts` with `synthesize(text, voice?): Promise<{ wav: Buffer }>` and `listVoices(): string[]`. The default offline voice is `en_US-ljspeech-medium`.
 - `src/main/voice/assets.ts` downloads pinned whisper.cpp v1.9.2 / Piper 2023.11.14-2 binaries and base.en / LJ Speech models into Electron userData on first use, verifies SHA-256 before installation, and emits `voice:download-progress` from main. No paid API key or installer-bundled model. `src/main/voice/process.ts` runs the binaries without a shell; `wav.ts` handles PCM/WAV.
 - Added fast asset/CLI/WAV tests and a 1.7-second spoken fixture. Typecheck passed; all 6 targeted tests passed with the real Linux whisper.cpp and Piper binaries supplied through test-only environment variables. The normal suite also runs without downloads and skips only the two optional real-binary probes.
-- Claude's Phase 2 meeting UI still needs a preload/IPC bridge to call these engines and listen to progress. Next Codex step: wire that bridge without editing `components/meeting/`, then move to Phase 3 floors and Phase 4 model catalog.
+- Claude's Phase 2 meeting UI still needs a preload/IPC bridge to call these engines and listen to progress. The engines are implemented; UI integration and the two-computer voice call are open.
 
 ## Phase 3 map step
 
 - Enlarged `office.tmj` from 34×22 to 48×30 and added `floor-2.tmj` / `floor-3.tmj` in the same tile gid space. The maps contain the planned department zones, desk points, and connected south/east wings. The CEO desk exists on floor 2; floor 1 repurposes it as reception.
 - `test/office-floors.test.cjs` checks dimensions, gids, required zones, and desk reachability from the entrance on all three maps. Typecheck and all 3 map tests passed.
-- Next: wire a floor switcher and persistent per-agent floor in `OfficeFloor.tsx`, `themeRegistry.ts`, store, and bounded presence; maps alone do not yet change the view.
+- The floor switcher and assignments were added in the next step below.
 
 ## Phase 3 runtime step
 
 - `src/shared/officeFloors.ts` derives a default department floor for older roster entries (orchestrator/leadership on 2, product/design/data on 3, others on 1); an explicit floor assignment wins. `src/renderer/src/store/store.ts` persists the optional `Agent.floor` field.
 - `OfficeFloor.tsx` now has a three-floor view switcher and a **Move selected agent here** control. It renders only agents and teammate avatars assigned to the visible floor; `themeRegistry.ts` selects the matching map and seat order. Department labels use each map's zone objects.
 - `src/shared/teamPresence.ts` carries a bounded optional floor in the display-only teammate DTO. Older absence of the field means floor 1; both computers should install this new build for floor-aware presence.
-- Typecheck, 21 floor/presence/transport tests, and `npm run build` passed. Physical two-computer floor navigation remains untested. Next Codex step: Phase 4 provider/model picker corrections.
+- Typecheck, 21 floor/presence/transport tests, and `npm run build` passed. Physical two-computer floor navigation remains untested.
+
+## Phase 4 model presets and local-model entry
+
+- Gemini CLI's documented `--model` aliases remain `auto`, `pro`, `flash`, and `flash-lite`; the catalog already had these, so `pro` stays the orchestrator recommendation. The provider's docs URL now points to the official CLI reference.
+- Antigravity `agy --model` takes slugs from `agy models`. Replaced display-name values and undocumented old choices with the eight slugs in the official headless guide, including `gemini-3.1-pro-high` for the orchestrator preset. Updated the Add Agent hire prompt example and catalog test.
+- Add Agent now shows a local-model shortcut before the provider list. It chooses the existing OpenCode route with `local/gpt-oss:20b`, and points to Settings → AI Engines for the Ollama endpoint. This uses the existing OpenCode/Crush/Pi model support; no new engine or auto-download was added. Removed Mac-only wording from the Add Agent local-model note.
+- The model preset commit passed typecheck and 30 provider/catalog/launch tests. The shortcut commit passed typecheck and 32 locale/provider/hire tests. The baked and remotely served model catalogs now match. Current typecheck and `npm run test:focused` pass (924 tests: 922 passed, 2 optional voice probes skipped, 0 failures). A fresh release artifact is still pending after Claude's concurrent Phase 1/2 integration.
+- Official references: https://geminicli.com/docs/cli/cli-reference/ and https://antigravity.google/docs/cli/headless/ (model list; availability can vary per account, so `agy models` on the user's device is authoritative).
+- The AppImage and SHA-256 above were built **before** the voice, floors, and model changes. Do not send that old artifact for new-feature acceptance. Build and hash a new AppImage after Phase 2 integration, then run the Linux + Bazzite two-computer acceptance described in `PLAN.md`.

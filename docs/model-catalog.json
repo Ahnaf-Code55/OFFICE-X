@@ -42,17 +42,14 @@
     ],
     "antigravity": [
       { "label": "CLI default", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "Gemini 3.1 Pro (High)", "label": "Gemini 3.1 Pro · High", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "Gemini 3.1 Pro (Low)", "label": "Gemini 3.1 Pro · Low", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "Gemini 3.7 Flash (High)", "label": "Gemini 3.7 Flash · High", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "Gemini 3.7 Flash (Medium)", "label": "Gemini 3.7 Flash · Med", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "Gemini 3.7 Flash (Low)", "label": "Gemini 3.7 Flash · Low", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "Gemini 3.5 Flash (High)", "label": "Gemini 3.5 Flash · High", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "Gemini 3.5 Flash (Medium)", "label": "Gemini 3.5 Flash · Med", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "Gemini 3.5 Flash (Low)", "label": "Gemini 3.5 Flash · Low", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "Claude Sonnet 4.6 (Thinking)", "label": "Claude Sonnet 4.6", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "Claude Opus 4.6 (Thinking)", "label": "Claude Opus 4.6", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "GPT-OSS 120B (Medium)", "label": "GPT-OSS 120B", "minAppVersion": null, "maxAppVersion": null }
+      { "id": "gemini-3.8-flash-high", "label": "Gemini 3.8 Flash · High", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "gemini-3.8-flash-medium", "label": "Gemini 3.8 Flash · Med", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "gemini-3.7-flash-high", "label": "Gemini 3.7 Flash · High", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "gemini-3.7-flash-medium", "label": "Gemini 3.7 Flash · Med", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "gemini-3.6-flash-high", "label": "Gemini 3.6 Flash · High", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "gemini-3.6-flash-medium", "label": "Gemini 3.6 Flash · Med", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "gemini-3.1-pro-high", "label": "Gemini 3.1 Pro · High", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "minAppVersion": null, "maxAppVersion": null }
     ],
     "qwen": [
       { "label": "default", "minAppVersion": null, "maxAppVersion": null },
