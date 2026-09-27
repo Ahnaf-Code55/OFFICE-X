@@ -429,11 +429,13 @@ export function OfficeFloor() {
       // Only floor 2 reserves seat 0 (CEO office) for the orchestrator.
       const GOD_SEAT = 0;
       const workerFirstSeat = selectedFloor === 2 ? 1 : 0;
-      // Floor 2's CISO / security room is the visiting teammate's office: my
-      // agents never sit there, guests fill it first.
+      // The visiting teammate's desks (CISO room on floor 2, design desk on
+      // floor 3): my agents never sit there, guests fill them first.
       const guestZone = selectedFloor === 2 ? mapRenderer.getZone('ciso-security') : undefined;
-      const guestSeats = new Set(guestZone ? seatTiles.flatMap((t, i) =>
-        t.x >= guestZone.x && t.x < guestZone.x + guestZone.width && t.y >= guestZone.y && t.y < guestZone.y + guestZone.height ? [i] : []) : []);
+      const designDesk = selectedFloor === 3 ? mapRenderer.getSpawnPoint('desk-design') : undefined;
+      const guestSeats = new Set(seatTiles.flatMap((t, i) =>
+        (guestZone && t.x >= guestZone.x && t.x < guestZone.x + guestZone.width && t.y >= guestZone.y && t.y < guestZone.y + guestZone.height)
+        || (designDesk && t.x === designDesk.x && t.y === designDesk.y) ? [i] : []));
       const claimSeat = (agent: Agent): number | null => {
         if (agent.isGod) { seatClaims.add(GOD_SEAT); return GOD_SEAT; }
         for (let i = workerFirstSeat; i < seatTiles.length; i++) {

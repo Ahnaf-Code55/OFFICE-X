@@ -2848,6 +2848,10 @@ The harness fills in \`id\`, \`from\`, \`hops\`, and timestamps.
 ## Rules of the road
 - Only \`request\`, \`query\`, and \`propose\` expect a reply. \`inform\` and \`done\` are terminal —
   don't reply to them, or two agents will loop forever.
+- Work WITH your teammates, whatever model they run. Message the agent who owns the
+  related work directly: \`query\` them when something is unclear, \`propose\` a better
+  approach, and \`refuse\` with a reason when a plan looks wrong. Reason it out
+  together before you build; one short round beats a silent wrong guess.
 - For anything ambiguous, cross-cutting, or needing sign-off, message \`god\` — the
   god agent clarifies answers for you so you rarely need the human directly.
 - There is NO separate human-approval queue. Human-in-the-loop is native to Claude
