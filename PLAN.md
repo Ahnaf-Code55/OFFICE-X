@@ -1,7 +1,7 @@
 # OFFICE-X feature plan (2026-09-27)
 
 Everything runs on subscriptions (Claude Code / Codex / Gemini CLI / Antigravity logins) or local models. No paid API keys.
-Owners work in separate files so Claude and Codex never edit the same file. HANDOFF.md = Claude only; Codex notes go in CODEX_NOTES.md.
+Owners work in separate files so no two tools edit the same file. HANDOFF.md = Claude only; Codex notes go in CODEX_NOTES.md; Antigravity (teammate's computer) notes go in ANTIGRAVITY_NOTES.md and its rules are in GEMINI.md.
 
 ## Phase 1: Group chat (Claude)
 - New protocol message kind `chat` in `src/shared/teamProtocol.ts` (signed + encrypted like other actions, size-limited, replay-protected).
@@ -36,6 +36,11 @@ export function listVoices(): string[]
 - Local only: whisper.cpp (small/base model) for STT, Piper for TTS. Linux + Windows x64.
 - Download the binaries and models on first use into userData, pin sha256 hashes, and show a progress event. Don't bundle them into the installer.
 - One small test per file (tiny fixture wav gives non-empty text; text gives a valid WAV header).
+
+## Phase 5: Security + design (Antigravity, teammate's computer)
+- Security review of the Shared Office path: relay (`relay/`), protocol (`src/shared/teamProtocol.ts`), ingress and permissions (`src/main/teamIngress.ts`, `src/main/teamActions.ts`). Check signatures, replay protection, size limits, and that "Task requests (owner approves)" really can't prompt or type into agents. Write findings in ANTIGRAVITY_NOTES.md.
+- Design pass on the three floors (`src/renderer/src/assets/maps/`): furniture, decor and room feel per department. Don't move or rename spawn points or zones; the code seats agents by those names.
+- UI polish on Team chat and Meeting tabs (`src/renderer/src/components/meeting/`) after Claude's current version lands.
 
 ## Done means
 Two computers (Linux + Bazzite): text chat with teammate + 2 AIs, screenshot shared, voice call with both humans and AIs speaking, 3 floors navigable, typecheck and focused tests pass.
