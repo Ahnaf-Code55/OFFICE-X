@@ -33,7 +33,7 @@ import { MemoryManager } from './memory';
 import { KnowledgeManager } from './knowledge';
 import { MemoryReflector, type ReflectSettings } from './reflect';
 import { PersistStore } from './db';
-import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
+import { readAgentUsage, readChatTurns, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
 import { listIssues, listCIRuns } from './github';
 import { SlackWebhookServer, SlackReplyServer, postSlackReply, type SlackEventFile } from './slack';
 import {
@@ -3955,6 +3955,12 @@ ipcMain.handle('hive:agentContext', (_evt, agentId: unknown) => {
   const tp = hookServer.transcriptPath(agentId);
   if (!tp) return null;
   return readContextTokens(tp) ?? 0;
+});
+
+ipcMain.handle('hive:agentChat', (_evt, agentId: unknown) => {
+  if (typeof agentId !== 'string') return null;
+  const tp = hookServer.transcriptPath(agentId);
+  return tp ? readChatTurns(tp) : null;
 });
 
 // A consolidated, NON-SENSITIVE per-agent directory for the voice read-layer

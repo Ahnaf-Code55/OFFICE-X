@@ -384,3 +384,49 @@ export function readContextTokens(transcriptPath: string): number | null {
     return null;
   }
 }
+
+export interface ChatTurn { role: 'user' | 'assistant' | 'tool'; text: string; id: string }
+
+const CHAT_TAIL_BYTES = 1024 * 1024;
+
+/** Recent conversation from a Claude Code transcript, for the chat-style view:
+ *  typed prompts, assistant text, and one line per tool call. Hook/system
+ *  injections (isMeta, `<...>` wrappers) and tool results are skipped. */
+export function readChatTurns(transcriptPath: string, limit = 200): ChatTurn[] {
+  const turns: ChatTurn[] = [];
+  try {
+    if (!existsSync(transcriptPath)) return turns;
+    const fd = openSync(transcriptPath, 'r');
+    let text: string;
+    try {
+      const size = fstatSync(fd).size;
+      const len = Math.min(size, CHAT_TAIL_BYTES);
+      const buf = Buffer.alloc(len);
+      readSync(fd, buf, 0, len, size - len);
+      text = buf.toString('utf8');
+    } finally {
+      closeSync(fd);
+    }
+    for (const line of text.split('\n')) {
+      let rec: { type?: string; isMeta?: boolean; uuid?: string; message?: { content?: unknown } };
+      try { rec = JSON.parse(line); } catch { continue; }
+      if ((rec.type !== 'user' && rec.type !== 'assistant') || rec.isMeta) continue;
+      const content = rec.message?.content;
+      const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? content : [];
+      blocks.forEach((b: { type?: string; text?: string; name?: string; input?: Record<string, unknown> }, i) => {
+        const id = `${rec.uuid ?? turns.length}-${i}`;
+        if (b.type === 'text' && typeof b.text === 'string' && b.text.trim()) {
+          const t = b.text.trim();
+          if (rec.type === 'user' && t.startsWith('<')) return;
+          turns.push({ role: rec.type as 'user' | 'assistant', text: t, id });
+        } else if (b.type === 'tool_use' && rec.type === 'assistant') {
+          const arg = b.input && (b.input.command ?? b.input.file_path ?? b.input.pattern ?? b.input.description ?? b.input.url);
+          turns.push({ role: 'tool', text: `${b.name ?? 'tool'}${typeof arg === 'string' ? ` · ${arg.slice(0, 120)}` : ''}`, id });
+        }
+      });
+    }
+  } catch {
+    return turns;
+  }
+  return turns.slice(-limit);
+}

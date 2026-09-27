@@ -1016,6 +1016,10 @@ const api = {
    *  have fired at least once (the transcript path is learned from them). */
   agentContext: (agentId: string): Promise<number | null> =>
     ipcRenderer.invoke('hive:agentContext', agentId),
+  /** Recent chat turns from an agent's Claude transcript (chat-style view). Null
+   *  until its hooks have reported a transcript path. */
+  agentChat: (agentId: string): Promise<{ role: 'user' | 'assistant' | 'tool'; text: string; id: string }[] | null> =>
+    ipcRenderer.invoke('hive:agentChat', agentId),
 
   // ─── Live telemetry (OTel collector — the usage-provider seam + spans) ──────
   /** Live cumulative usage for an agent (OTel-preferred, transcript fallback). */

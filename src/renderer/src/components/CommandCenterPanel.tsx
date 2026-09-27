@@ -6,6 +6,7 @@ import { PixelButton } from './PixelButton';
 import { SpritePortrait } from './SpritePortrait';
 import { PtyTerminalView } from './PtyTerminalView';
 import { MessageQueueComposer } from './MessageQueueComposer';
+import { AgentChatView } from './AgentChatView';
 import { TasksKanban } from './TasksKanban';
 import { AskMeTab } from './AskMeTab';
 import { TriggersTab } from './triggers/TriggersTab';
@@ -86,6 +87,9 @@ const TABS: { key: CCTab; labelKey: string; icon: Parameters<typeof Icon>[0]['na
 export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent; fullscreen?: boolean }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<CCTab>('terminal');
+  // Chat (Claude-Code-app style) or the raw TUI. The pty stays mounted under the chat.
+  const [chatView, setChatView] = useState(() => { try { return localStorage.getItem('cth.chatView') !== '0'; } catch { return true; } });
+  const toggleChatView = () => setChatView((v) => { try { localStorage.setItem('cth.chatView', v ? '0' : '1'); } catch { /* ignore */ } return !v; });
   // The trigger-history ledger has nothing to say until an outside party can
   // reach us, so its tab appears only once an org key or a webhook exists. This
   // is the first config-gated tab in the panel: TABS stays the canonical order
@@ -296,7 +300,18 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
             <Centered>{t('commandCenter.terminalFullscreen')}</Centered>
           ) : agent.ptyId ? (
             <>
-              <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '2px 6px' }}>
+                <button type="button" onClick={toggleChatView} aria-pressed={chatView}
+                  style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--cth-ink-300)', borderRadius: 4, background: 'var(--cth-cream-200)', color: 'var(--cth-ink-900)', cursor: 'pointer' }}>
+                  {chatView ? 'Show terminal' : 'Show chat'}
+                </button>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
+                {chatView && (
+                  <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex' }}>
+                    <AgentChatView agentId={agent.id} busy={agent.status === 'working' || agent.status === 'thinking'} />
+                  </div>
+                )}
                 <PtyTerminalView
                   key={terminalInstanceKey(agent.ptyId, agent.terminalGeneration)}
                   ptyId={agent.ptyId}
