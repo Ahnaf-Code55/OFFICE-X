@@ -7,13 +7,13 @@ import type { AgentProvider } from './agentProvider';
  * Provider model IDs may change; keep the list aligned with the provider presets
  * and verify IDs before release.
  *
- * Two buckets: LOCAL (Mac-runnable via Ollama/LM Studio, no key) and THIRD-PARTY
+ * Two buckets: LOCAL (via Ollama/LM Studio, no key) and THIRD-PARTY
  * OSS PROVIDER (BYOK). Every engine consumes the same provider id; only the
  * local prefix differs (§6): OpenCode names its local provider `local`; Crush and
  * pi use `ollama`. Provider-routed slugs are identical across the three engines.
  */
 
-/** A Mac-runnable local model (Ollama tag). Slug is engine-prefixed via localSlugFor. */
+/** A local model (Ollama tag). Slug is engine-prefixed via localSlugFor. */
 export interface OssLocalPick {
   label: string;
   /** Ollama tag — keep the colon (e.g. `gpt-oss:20b`). */
@@ -31,7 +31,7 @@ export interface OssProviderPick {
   keyEnv: string;
 }
 
-/** §7.A — Local quick-picks (Mac-runnable, no key) — Ollama tags. */
+/** §7.A — Local quick-picks (no key) — Ollama tags. */
 export const OSS_LOCAL_PICKS: OssLocalPick[] = [
   { label: 'gpt-oss 20B', tag: 'gpt-oss:20b', minRam: '16 GB' },
   { label: 'Qwen3 30B-A3B', tag: 'qwen3:30b-a3b', minRam: '32 GB' },

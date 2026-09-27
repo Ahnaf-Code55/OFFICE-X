@@ -230,6 +230,15 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     }
     setCommand(buildSpawnCommand(config, nextModel, id));
   };
+  const pickLocalOllama = () => {
+    const localProvider: AgentProvider = 'opencode';
+    const localModel = localSlugFor(localProvider, OSS_LOCAL_PICKS[0].tag);
+    setProvider(localProvider);
+    setModel(localModel);
+    setCommand(buildSpawnCommand(config, localModel, localProvider));
+    setResumeSessionId('');
+    setFolderNote(undefined);
+  };
   const preset = providerPreset(provider);
   const [goal, setGoal] = useState(pendingHire?.goal ?? '');
   const [isolate, setIsolate] = useState(pendingHire?.isolate ?? false);
@@ -870,6 +879,19 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
 
                 {section === 'engine' && (
                   <>
+                    <Row label={tr('addAgent.localQuickStart')}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <button
+                          onClick={pickLocalOllama}
+                          style={ossChip(provider === 'opencode' && model === localSlugFor('opencode', OSS_LOCAL_PICKS[0].tag), accent)}
+                        >
+                          {tr('addAgent.useLocalOllama')}
+                        </button>
+                        <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                          {tr('addAgent.localQuickStartHint')}
+                        </span>
+                      </div>
+                    </Row>
                     <Row label={tr('addAgent.provider')}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {AGENT_PROVIDER_PRESETS.map((p) => {
@@ -992,7 +1014,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
 
                     {(provider === 'opencode' || provider === 'crush' || provider === 'pi' || provider === 'qwen') && (
                       <div style={{ fontSize: 12, color: 'var(--cth-ink-500)', lineHeight: '16px', margin: '2px 0 6px' }}>
-                        {tr('addAgent.byokNote')} {tr('addAgent.runOnOpenModels')} · {tr('addAgent.setUpMacMini')}.
+                        {tr('addAgent.byokNote')}
                       </div>
                     )}
 
