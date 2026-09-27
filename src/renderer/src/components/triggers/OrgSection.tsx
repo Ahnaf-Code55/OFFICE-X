@@ -458,6 +458,11 @@ export function OrgSection({ onSummary }: { onSummary?: (s: string) => void }) {
               placeholder={t('teamMembers.requestTitle')} aria-label={t('teamMembers.requestTitle')} />
             <textarea value={requestMessage} onChange={(event) => setRequestMessage(event.target.value)} maxLength={8000}
               rows={3} placeholder={t('teamMembers.requestMessage')} aria-label={t('teamMembers.requestMessage')} />
+            <PixelButton variant="ghost" size="sm" onClick={() => {
+              // Once approved, the owner's orchestrator starts it (spawn-requests) on the owner's machine and plans.
+              setRequestTitle('New agent request');
+              setRequestMessage(`Please start an agent for ${cfg.displayName.trim() || 'me'}.\nName: \nRole: \nModel: Claude or Codex\nSeat: floor 2 CISO room / floor 3 design desk\nFirst task: `);
+            }}>{t('teamMembers.requestAgent')}</PixelButton>
             <PixelButton variant="secondary" size="sm" disabled={teamBusy || !requestMemberId || !requestTitle.trim() || !requestMessage.trim() || !transportStatus.running}
               onClick={() => { void sendTaskRequest(); }}>{t('teamMembers.sendRequest')}</PixelButton>
             <Hint>{t('teamMembers.agentControlHint')}</Hint>

@@ -1012,6 +1012,7 @@
     "terminalOutputLabel": "مخرجات الطرفية المشتركة",
     "terminalInput": "أمر الطرفية (للتحكم الكامل فقط؛ يرسل Enter)",
     "sendTerminalInput": "إرسال إدخال الطرفية",
+    "requestAgent": "طلب وكيل",
     "sendFailed": "تعذر إرسال رسالة الفريق.",
     "sent": "تم إرسال الرسالة."
   },

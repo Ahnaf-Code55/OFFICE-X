@@ -4512,6 +4512,16 @@ function dispatchTeamMessage(message: TeamMessage, peerId: string): void {
   });
   if (outcome.type === 'task-request') {
     entry({ title: outcome.title, body: outcome.message, kind: 'directive', decision: outcome.decision });
+    // Held for approval: ping the owner so it's one click (Command Center → history), not a hunt.
+    if (outcome.decision === 'pending') {
+      try {
+        if (Notification.isSupported()) {
+          const toast = new Notification({ title: `${member.displayName} needs your approval`, body: outcome.title });
+          toast.on('click', () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } });
+          toast.show();
+        }
+      } catch { /* best-effort */ }
+    }
   } else if (outcome.type === 'agent-prompt') {
     const agent = registry.agents[outcome.agentId];
     if (!agent) throw new Error('teammate target agent is unavailable');

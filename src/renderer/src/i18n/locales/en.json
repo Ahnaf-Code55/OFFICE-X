@@ -1012,6 +1012,7 @@
     "terminalOutputLabel": "Shared terminal output",
     "terminalInput": "Terminal command (full control only; sends Enter)",
     "sendTerminalInput": "Send terminal input",
+    "requestAgent": "Request an agent",
     "sendFailed": "Could not send the team message.",
     "sent": "Message sent."
   },

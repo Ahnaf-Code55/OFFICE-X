@@ -1012,6 +1012,7 @@
     "terminalOutputLabel": "共享终端输出",
     "terminalInput": "终端命令（仅完全控制；发送回车）",
     "sendTerminalInput": "发送终端输入",
+    "requestAgent": "申请一个智能体",
     "sendFailed": "无法发送团队消息。",
     "sent": "消息已发送。"
   },
