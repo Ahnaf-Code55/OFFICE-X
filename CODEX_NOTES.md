@@ -34,3 +34,9 @@ Sources: [Bazzite AppImage guide](https://docs.bazzite.gg/Installing_and_Managin
 - `src/main/voice/assets.ts` downloads pinned whisper.cpp v1.9.2 / Piper 2023.11.14-2 binaries and base.en / LJ Speech models into Electron userData on first use, verifies SHA-256 before installation, and emits `voice:download-progress` from main. No paid API key or installer-bundled model. `src/main/voice/process.ts` runs the binaries without a shell; `wav.ts` handles PCM/WAV.
 - Added fast asset/CLI/WAV tests and a 1.7-second spoken fixture. Typecheck passed; all 6 targeted tests passed with the real Linux whisper.cpp and Piper binaries supplied through test-only environment variables. The normal suite also runs without downloads and skips only the two optional real-binary probes.
 - Claude's Phase 2 meeting UI still needs a preload/IPC bridge to call these engines and listen to progress. Next Codex step: wire that bridge without editing `components/meeting/`, then move to Phase 3 floors and Phase 4 model catalog.
+
+## Phase 3 map step
+
+- Enlarged `office.tmj` from 34×22 to 48×30 and added `floor-2.tmj` / `floor-3.tmj` in the same tile gid space. The maps contain the planned department zones, desk points, and connected south/east wings. The CEO desk exists on floor 2; floor 1 repurposes it as reception.
+- `test/office-floors.test.cjs` checks dimensions, gids, required zones, and desk reachability from the entrance on all three maps. Typecheck and all 3 map tests passed.
+- Next: wire a floor switcher and persistent per-agent floor in `OfficeFloor.tsx`, `themeRegistry.ts`, store, and bounded presence; maps alone do not yet change the view.
