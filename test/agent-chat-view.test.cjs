@@ -22,3 +22,16 @@ test('chat view keeps prompts, replies and tool calls, drops injected noise', ()
   assert.deepEqual(readChatTurns(file).map((t) => `${t.role}:${t.text}`), ['user:fix the bug', 'assistant:On it.', 'tool:Bash · npm test']);
   assert.deepEqual(readChatTurns(path.join(path.dirname(file), 'missing.jsonl')), []);
 });
+
+test('chat view reads Codex rollouts', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'chat-view-')), 'rollout.jsonl');
+  const item = (payload) => JSON.stringify({ type: 'response_item', payload });
+  fs.writeFileSync(file, [
+    item({ type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'rules' }] }),
+    item({ type: 'message', role: 'user', content: [{ type: 'input_text', text: '<turn_aborted>' }] }),
+    item({ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'check the fleet' }] }),
+    item({ type: 'custom_tool_call', name: 'exec', input: 'await tools.exec_command({cmd:"ls -la"})' }),
+    item({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'All good.' }] })
+  ].join('\n'));
+  assert.deepEqual(readChatTurns(file).map((t) => `${t.role}:${t.text}`), ['user:check the fleet', 'tool:Bash · ls -la', 'assistant:All good.']);
+});

@@ -389,6 +389,22 @@ export interface ChatTurn { role: 'user' | 'assistant' | 'tool'; text: string; i
 
 const CHAT_TAIL_BYTES = 1024 * 1024;
 
+interface CodexItem { type?: string; id?: string; role?: string; name?: string; input?: unknown; arguments?: unknown; content?: Array<{ type?: string; text?: string }> }
+
+/** Codex rollout `response_item`s: user/assistant messages and tool calls.
+ *  Developer messages, reasoning, tool output and `<...>`/`[...]` injections are skipped. */
+function pushCodexItem(turns: ChatTurn[], item: CodexItem): void {
+  const id = item.id ?? String(turns.length);
+  if (item.type === 'message' && (item.role === 'user' || item.role === 'assistant')) {
+    const t = (item.content ?? []).map((c) => c.text ?? '').join('\n').trim();
+    if (t && !(item.role === 'user' && /^[<[]/.test(t))) turns.push({ role: item.role, text: t, id });
+  } else if (item.type === 'custom_tool_call' || item.type === 'function_call') {
+    const raw = String(item.input ?? item.arguments ?? '');
+    const cmd = /"?(?:cmd|command)"?\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(raw)?.[1]?.replace(/\\n/g, ' ').replace(/\\(.)/g, '$1');
+    turns.push({ role: 'tool', text: `${cmd ? 'Bash' : item.name ?? 'tool'}${cmd ? ` · ${cmd.slice(0, 120)}` : ''}`, id });
+  }
+}
+
 /** Recent conversation from a Claude Code transcript, for the chat-style view:
  *  typed prompts, assistant text, and one line per tool call. Hook/system
  *  injections (isMeta, `<...>` wrappers) and tool results are skipped. */
@@ -408,8 +424,9 @@ export function readChatTurns(transcriptPath: string, limit = 200): ChatTurn[] {
       closeSync(fd);
     }
     for (const line of text.split('\n')) {
-      let rec: { type?: string; isMeta?: boolean; uuid?: string; message?: { content?: unknown } };
+      let rec: { type?: string; isMeta?: boolean; uuid?: string; message?: { content?: unknown }; payload?: CodexItem };
       try { rec = JSON.parse(line); } catch { continue; }
+      if (rec.type === 'response_item' && rec.payload) { pushCodexItem(turns, rec.payload); continue; }
       if ((rec.type !== 'user' && rec.type !== 'assistant') || rec.isMeta) continue;
       const content = rec.message?.content;
       const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? content : [];

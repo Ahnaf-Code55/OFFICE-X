@@ -5,8 +5,18 @@ import remarkGfm from 'remark-gfm';
 type Turn = NonNullable<Awaited<ReturnType<typeof window.cth.agentChat>>>[number];
 type Row = Turn | { role: 'tools'; id: string; items: Turn[] };
 
-const INK = '#e8e6e3';
-const MUTED = '#9a9893';
+/** Per-engine look, on the office's cream palette: Claude Code app vs Codex app. */
+const THEMES = {
+  claude: {
+    font: 'var(--cth-font-ui)', userBubble: { background: 'var(--cth-cream-200)', border: '1px solid var(--cth-cream-300)', borderRadius: 10 },
+    busy: <><span style={{ color: '#d97757' }}>✻</span> Working…</>, ran: (n: number) => `Ran ${n} command${n > 1 ? 's' : ''}`
+  },
+  codex: {
+    font: 'ui-sans-serif, system-ui, sans-serif', userBubble: { background: 'var(--cth-paper-200)', border: 0, borderRadius: 18 },
+    busy: <><span style={{ opacity: 0.6 }}>●</span> Thinking</>, ran: (n: number) => `Ran ${n} command${n > 1 ? 's' : ''}`
+  }
+} as const;
+export type ChatTheme = keyof typeof THEMES;
 
 /** Fold consecutive tool calls into one collapsible "Ran N commands" row. */
 function group(turns: Turn[]): Row[] {
@@ -20,24 +30,24 @@ function group(turns: Turn[]): Row[] {
   return rows;
 }
 
-function ToolGroup({ items }: { items: Turn[] }) {
+function ToolGroup({ items, ran }: { items: Turn[]; ran: (n: number) => string }) {
   const [open, setOpen] = useState(false);
-  const allBash = items.every((i) => i.text.startsWith('Bash'));
-  const label = allBash ? `Ran ${items.length} command${items.length > 1 ? 's' : ''}` : `Used ${items.length} tool${items.length > 1 ? 's' : ''}`;
+  const label = items.every((i) => i.text.startsWith('Bash')) ? ran(items.length) : `Used ${items.length} tool${items.length > 1 ? 's' : ''}`;
   return <div>
     <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
-      style={{ background: 'none', border: 0, padding: 0, color: MUTED, cursor: 'pointer', font: 'inherit' }}>
+      style={{ background: 'none', border: 0, padding: 0, color: 'var(--cth-ink-500)', cursor: 'pointer', font: 'inherit' }}>
       {label} {open ? '⌄' : '›'}
     </button>
-    {open && <div style={{ marginTop: 4, paddingLeft: 10, borderLeft: '1px solid #3a3a38', display: 'grid', gap: 2 }}>
-      {items.map((i) => <div key={i.id} style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: MUTED, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.text}</div>)}
+    {open && <div style={{ marginTop: 4, paddingLeft: 10, borderLeft: '2px solid var(--cth-cream-300)', display: 'grid', gap: 2 }}>
+      {items.map((i) => <div key={i.id} style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.text}</div>)}
     </div>}
   </div>;
 }
 
-/** Claude-Code-app-style view of an agent's conversation, read from its session
- *  transcript. The real TUI keeps running underneath; this only renders it. */
-export function AgentChatView({ agentId, busy }: { agentId: string; busy: boolean }) {
+/** App-style view of an agent's conversation, read from its session transcript.
+ *  The real TUI keeps running underneath; this only renders it. */
+export function AgentChatView({ agentId, busy, theme }: { agentId: string; busy: boolean; theme: ChatTheme }) {
+  const look = THEMES[theme];
   const [turns, setTurns] = useState<Turn[] | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -56,21 +66,21 @@ export function AgentChatView({ agentId, busy }: { agentId: string; busy: boolea
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, [turns]);
 
-  const shell: React.CSSProperties = { flex: 1, minHeight: 0, background: '#1f1f1e', color: INK, fontFamily: 'system-ui, sans-serif', fontSize: 14, lineHeight: 1.55 };
+  const shell: React.CSSProperties = { flex: 1, minHeight: 0, background: 'var(--cth-cream-50)', color: 'var(--cth-ink-900)', fontFamily: look.font, fontSize: 14, lineHeight: 1.55 };
 
   if (!turns) {
-    return <div style={{ ...shell, display: 'grid', placeItems: 'center', color: MUTED, fontSize: 12, padding: 16, textAlign: 'center' }}>
-      Chat view appears once this Claude agent has run a turn. Other engines: use Terminal.
+    return <div style={{ ...shell, display: 'grid', placeItems: 'center', color: 'var(--cth-ink-500)', fontSize: 12, padding: 16, textAlign: 'center' }}>
+      The chat appears after this agent's first turn. Use Show terminal until then.
     </div>;
   }
 
   return <div ref={listRef} onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}
     style={{ ...shell, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
     {group(turns).map((r) => r.role === 'tools'
-      ? <ToolGroup key={r.id} items={r.items} />
+      ? <ToolGroup key={r.id} items={r.items} ran={look.ran} />
       : r.role === 'user'
-        ? <div key={r.id} style={{ alignSelf: 'flex-end', maxWidth: '85%', background: '#2c2c2a', border: '1px solid #3a3a38', borderRadius: 10, padding: '8px 12px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{r.text}</div>
+        ? <div key={r.id} style={{ alignSelf: 'flex-end', maxWidth: '85%', padding: '8px 14px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', ...look.userBubble }}>{r.text}</div>
         : <div key={r.id} className="agent-chat-md" style={{ overflowWrap: 'anywhere' }}><ReactMarkdown remarkPlugins={[remarkGfm]}>{r.text}</ReactMarkdown></div>)}
-    {busy && <div style={{ color: MUTED, fontSize: 12 }}><span style={{ color: '#d97757' }}>✻</span> Working…</div>}
+    {busy && <div style={{ color: 'var(--cth-ink-500)', fontSize: 12 }}>{look.busy}</div>}
   </div>;
 }

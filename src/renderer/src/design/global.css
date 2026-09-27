@@ -370,13 +370,13 @@ canvas, img, svg { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-md-card table { margin: 0.5em 0; }
 .cth-md-card th, .cth-md-card td { padding: 3px 7px; font-size: 0.9em; }
 
-/* AgentChatView markdown (Claude Code app look) */
+/* AgentChatView markdown */
 .agent-chat-md > :first-child { margin-top: 0; }
 .agent-chat-md > :last-child { margin-bottom: 0; }
 .agent-chat-md p, .agent-chat-md ul, .agent-chat-md ol { margin: 0 0 8px; }
-.agent-chat-md code { font-family: var(--cth-font-mono); font-size: 12px; background: #2c2c2a; border-radius: 4px; padding: 1px 4px; }
-.agent-chat-md pre { background: #151514; border: 1px solid #3a3a38; border-radius: 8px; padding: 10px; overflow-x: auto; }
+.agent-chat-md code { font-family: var(--cth-font-mono); font-size: 12px; background: var(--cth-cream-200); border-radius: 4px; padding: 1px 4px; }
+.agent-chat-md pre { background: var(--cth-paper-100); border: 1px solid var(--cth-cream-300); border-radius: 8px; padding: 10px; overflow-x: auto; }
 .agent-chat-md pre code { background: none; padding: 0; }
-.agent-chat-md a { color: #8ab4f8; }
+.agent-chat-md a { color: var(--cth-ink-700); text-decoration: underline; }
 .agent-chat-md table { border-collapse: collapse; }
-.agent-chat-md th, .agent-chat-md td { border: 1px solid #3a3a38; padding: 4px 8px; }
+.agent-chat-md th, .agent-chat-md td { border: 1px solid var(--cth-cream-300); padding: 4px 8px; }
