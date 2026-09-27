@@ -145,7 +145,11 @@ export function OrgSection({ onSummary }: { onSummary?: (s: string) => void }) {
       if (!identity.ok) throw new Error(identity.error ?? t('teamMembers.identityUnavailable'));
       if (identity.deviceId === result.invite.memberId) throw new Error(t('teamMembers.cannotAddSelf'));
       if (identity.officeId && identity.officeId !== result.invite.officeId) {
-        throw new Error(t('teamMembers.officeMismatch'));
+        // Both sides clicked "Create my invite" first, so each made its own office.
+        // Join theirs instead; main refuses if this device already trusts anyone.
+        const joined = await window.cth.setOrgOfficeId(result.invite.officeId);
+        if (!joined.ok || !joined.officeId) throw new Error(joined.error ?? t('teamMembers.officeMismatch'));
+        mirror({ ...useStore.getState().orgTrigger, officeId: joined.officeId });
       }
       setTeamInvite(result.invite);
     } catch (error) {
