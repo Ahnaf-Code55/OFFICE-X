@@ -61,10 +61,12 @@ export function TeamChat() {
   useEffect(() => {
     void window.cth.listChat().then(setMessages);
     void window.cth.getChatTiers().then(setTiers);
-    return window.cth.onChatMessage((message) => {
+    const offPrompt = window.cth.onChatAgentPrompt(({ agentId, text }) => useStore.getState().enqueueMessage(agentId, text));
+    const offMessage = window.cth.onChatMessage((message) => {
       setMessages((prev) => [...prev, message].slice(-100));
       if (!openRef.current) setUnread((n) => n + 1);
     });
+    return () => { offPrompt(); offMessage(); };
   }, []);
 
   useEffect(() => {

@@ -4971,7 +4971,10 @@ const chat = createChat({
     const agent = hive.registry().agents[agentId];
     return agent && !agent.archived ? agent.name : undefined;
   },
-  deliverToAgent: (agentId, subject, body) => { hive.send({ to: agentId, act: 'inform', subject, body }, 'chat'); },
+  // Same path as Slack: the renderer queues the prompt and types it once the agent is idle.
+  deliverToAgent: (agentId, _subject, body) => {
+    for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:agentPrompt', { agentId, text: body });
+  },
   sendToTeammates: async (body) => {
     const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
     if (!cfg.enabled || !cfg.officeId || !persist.isOpen) return;

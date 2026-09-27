@@ -1269,6 +1269,11 @@ const api = {
     ipcRenderer.invoke('chat:send', { channel, text, image }),
   getChatTiers: (): Promise<Record<string, ChatTier>> => ipcRenderer.invoke('chat:getTiers'),
   setChatTier: (agentId: string, tier: ChatTier): Promise<boolean> => ipcRenderer.invoke('chat:setTier', agentId, tier),
+  onChatAgentPrompt: (cb: (value: { agentId: string; text: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, value: { agentId: string; text: string }) => cb(value);
+    ipcRenderer.on('chat:agentPrompt', listener);
+    return () => ipcRenderer.removeListener('chat:agentPrompt', listener);
+  },
   onChatMessage: (cb: (message: ChatView) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, message: ChatView) => cb(message);
     ipcRenderer.on('chat:message', listener);
