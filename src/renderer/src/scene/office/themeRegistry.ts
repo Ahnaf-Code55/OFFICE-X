@@ -219,9 +219,8 @@ export const OFFICE_THEME: ThemeConfig = {
   },
 };
 
-/** The three OQVIAN floors share art and interactions but have distinct maps
- *  and desk claim orders. Each map retains the original prop anchors, so the
- *  calendar, boards, clock and coffee interactions remain valid. */
+/** The three OQVIAN floors share art and interactions. The private-office and
+ *  studio floors have their own coffee counter coordinates and no café seats. */
 export const OFFICE_FLOOR_THEMES: Record<OfficeFloorNumber, ThemeConfig> = {
   1: OFFICE_THEME,
   2: {
@@ -230,7 +229,15 @@ export const OFFICE_FLOOR_THEMES: Record<OfficeFloorNumber, ThemeConfig> = {
     primarySeatNames: [
       'desk-ceo', 'desk-ciso', 'desk-hr', 'desk-finance', 'desk-operations',
       ...OFFICE_THEME.primarySeatNames.filter((name) => name !== 'desk-reception')
-    ]
+    ],
+    cafeSeatNames: [],
+    cafeStands: [],
+    coffee: {
+      trayTile: { x: 43, y: 13 }, trayStand: { x: 43, y: 15 },
+      machineStand: { x: 44, y: 15 }, sinkTile: { x: 45, y: 13 },
+      sinkStand: { x: 45, y: 15 }, maxCups: 4
+    },
+    errandSpots: []
   },
   3: {
     ...OFFICE_THEME,
@@ -238,7 +245,15 @@ export const OFFICE_FLOOR_THEMES: Record<OfficeFloorNumber, ThemeConfig> = {
     primarySeatNames: [
       'desk-product-director', 'desk-product', 'desk-design', 'desk-data', 'desk-ai',
       ...OFFICE_THEME.primarySeatNames.filter((name) => name !== 'desk-reception')
-    ]
+    ],
+    cafeSeatNames: [],
+    cafeStands: [],
+    coffee: {
+      trayTile: { x: 40, y: 25 }, trayStand: { x: 40, y: 27 },
+      machineStand: { x: 41, y: 27 }, sinkTile: { x: 42, y: 25 },
+      sinkStand: { x: 42, y: 27 }, maxCups: 4
+    },
+    errandSpots: []
   }
 };
 
