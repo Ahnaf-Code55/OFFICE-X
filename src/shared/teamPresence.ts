@@ -14,6 +14,8 @@ export interface TeamPresenceAgent {
   name: string;
   character: TeamPresenceCharacter;
   status: TeamPresenceStatus;
+  /** Display-only department floor; older peers without this field are floor 1. */
+  floor?: 1 | 2 | 3;
 }
 
 export interface TeamPresencePeer {
@@ -33,6 +35,7 @@ const STATUSES = new Set<TeamPresenceStatus>(['idle', 'working', 'waiting', 'off
 const CHARACTERS: ReadonlySet<string> = new Set(TEAM_PRESENCE_CHARACTERS);
 const PEER_KEYS = new Set(['id', 'name', 'agents']);
 const AGENT_KEYS = new Set(['id', 'name', 'character', 'status']);
+const AGENT_KEYS_WITH_FLOOR = new Set([...AGENT_KEYS, 'floor']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -60,11 +63,12 @@ export function parseTeamPresence(input: unknown): TeamPresenceSnapshot {
     peerIds.add(rawPeer.id);
     const agentIds = new Set<string>();
     const agents = rawPeer.agents.map((rawAgent) => {
-      if (!isRecord(rawAgent) || !exactKeys(rawAgent, AGENT_KEYS)
+      if (!isRecord(rawAgent) || !exactKeys(rawAgent, Object.hasOwn(rawAgent, 'floor') ? AGENT_KEYS_WITH_FLOOR : AGENT_KEYS)
         || typeof rawAgent.id !== 'string' || !AGENT_ID_RE.test(rawAgent.id)
         || !validName(rawAgent.name)
         || typeof rawAgent.character !== 'string' || !CHARACTERS.has(rawAgent.character)
-        || typeof rawAgent.status !== 'string' || !STATUSES.has(rawAgent.status as TeamPresenceStatus)) {
+        || typeof rawAgent.status !== 'string' || !STATUSES.has(rawAgent.status as TeamPresenceStatus)
+        || (Object.hasOwn(rawAgent, 'floor') && rawAgent.floor !== 1 && rawAgent.floor !== 2 && rawAgent.floor !== 3)) {
         throw new Error('invalid team presence agent');
       }
       if (agentIds.has(rawAgent.id)) throw new Error('duplicate team presence agent');
@@ -73,7 +77,8 @@ export function parseTeamPresence(input: unknown): TeamPresenceSnapshot {
         id: rawAgent.id,
         name: rawAgent.name,
         character: rawAgent.character as TeamPresenceCharacter,
-        status: rawAgent.status as TeamPresenceStatus
+        status: rawAgent.status as TeamPresenceStatus,
+        ...(Object.hasOwn(rawAgent, 'floor') ? { floor: rawAgent.floor as 1 | 2 | 3 } : {})
       };
     });
     return { id: rawPeer.id, name: rawPeer.name, agents };

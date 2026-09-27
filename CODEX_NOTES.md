@@ -40,3 +40,10 @@ Sources: [Bazzite AppImage guide](https://docs.bazzite.gg/Installing_and_Managin
 - Enlarged `office.tmj` from 34×22 to 48×30 and added `floor-2.tmj` / `floor-3.tmj` in the same tile gid space. The maps contain the planned department zones, desk points, and connected south/east wings. The CEO desk exists on floor 2; floor 1 repurposes it as reception.
 - `test/office-floors.test.cjs` checks dimensions, gids, required zones, and desk reachability from the entrance on all three maps. Typecheck and all 3 map tests passed.
 - Next: wire a floor switcher and persistent per-agent floor in `OfficeFloor.tsx`, `themeRegistry.ts`, store, and bounded presence; maps alone do not yet change the view.
+
+## Phase 3 runtime step
+
+- `src/shared/officeFloors.ts` derives a default department floor for older roster entries (orchestrator/leadership on 2, product/design/data on 3, others on 1); an explicit floor assignment wins. `src/renderer/src/store/store.ts` persists the optional `Agent.floor` field.
+- `OfficeFloor.tsx` now has a three-floor view switcher and a **Move selected agent here** control. It renders only agents and teammate avatars assigned to the visible floor; `themeRegistry.ts` selects the matching map and seat order. Department labels use each map's zone objects.
+- `src/shared/teamPresence.ts` carries a bounded optional floor in the display-only teammate DTO. Older absence of the field means floor 1; both computers should install this new build for floor-aware presence.
+- Typecheck, 21 floor/presence/transport tests, and `npm run build` passed. Physical two-computer floor navigation remains untested. Next Codex step: Phase 4 provider/model picker corrections.

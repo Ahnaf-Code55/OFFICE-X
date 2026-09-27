@@ -28,6 +28,13 @@ test('agent presence preserves existing local agent identifiers for remote targe
   ] }]));
 });
 
+test('agent presence carries only a bounded department floor', () => {
+  const withFloor = [{ ...sample[0], agents: [{ ...sample[0].agents[0], floor: 3 }] }];
+  assert.equal(parseRemotePresence(withFloor)[0].agents[0].floor, 3);
+  assert.throws(() => parseRemotePresence([{ ...sample[0], agents: [{ ...sample[0].agents[0], floor: 4 }] }]));
+  assert.throws(() => parseRemotePresence([{ ...sample[0], agents: [{ ...sample[0].agents[0], floor: '3' }] }]));
+});
+
 test('remote presence rejects overflow, duplicate IDs, unknown fields, and local-runtime data', () => {
   assert.throws(() => parseRemotePresence(Array.from({ length: 9 }, (_, i) => ({ id: `g${i}`, name: 'Guest', agents: [] }))));
   assert.throws(() => parseRemotePresence([{ ...sample[0], cwd: '/secret/project' }]));

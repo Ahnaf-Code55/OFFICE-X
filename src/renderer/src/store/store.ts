@@ -4,6 +4,7 @@ import type { OfficeCharacterName } from '@/scene/office/cast';
 import type { ThemeId } from '@/scene/office/themeRegistry';
 import type { StatusKind } from '@/components/PixelBadge';
 import type { AgentProvider } from '@shared/agentProvider';
+import type { OfficeFloorNumber } from '@shared/officeFloors';
 import type { HireManifest } from '@shared/hire';
 import {
   EMPTY_HIRE_QUEUE,
@@ -47,6 +48,8 @@ export interface Agent {
   /** persistent job / hire one-liner — same string as hive registry `role`.
    *  Live status belongs on `status` / `action`, never here. */
   description: string;
+  /** Durable department floor. Older roster entries derive a floor from role. */
+  floor?: OfficeFloorNumber;
   project: string;
   /** legacy field — populated only for the seeded mock agents */
   tmuxTarget: string;

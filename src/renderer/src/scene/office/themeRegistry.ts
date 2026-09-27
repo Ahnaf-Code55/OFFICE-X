@@ -13,6 +13,7 @@
 // (uncommitted human WIP) — the office theme references its existing exports.
 
 import type { Texture } from 'pixi.js';
+import type { OfficeFloorNumber } from '@shared/officeFloors';
 import { colors } from '@/design/tokens';
 import {
   CAST_BY_NAME,
@@ -27,6 +28,8 @@ import a5FloorsWallsUrl from '@/assets/tilesets/a5-office-floors-walls.png?url';
 import interiorsUrl from '@/assets/tilesets/interiors.png?url';
 // .tmj is Tiled JSON; imported as raw text and parsed by the loader.
 import officeMapRaw from '@/assets/maps/office.tmj?raw';
+import floor2MapRaw from '@/assets/maps/floor-2.tmj?raw';
+import floor3MapRaw from '@/assets/maps/floor-3.tmj?raw';
 import brooklyn99MapRaw from '@/assets/maps/brooklyn99.tmj?raw';
 
 /** Theme identifiers. Only `office` exists in Phase 0; the five TV-show themes
@@ -139,8 +142,7 @@ export interface ThemeConfig {
   cast: ThemeCast;
 }
 
-/** The existing office, expressed as a theme. Values are copied verbatim from
- *  the former in-file constants in OfficeFloor.tsx / DeskScreen.ts. */
+/** The first OFFICE-X floor retains the office scene's original anchors. */
 export const OFFICE_THEME: ThemeConfig = {
   id: 'office',
   mapRaw: officeMapRaw,
@@ -151,11 +153,12 @@ export const OFFICE_THEME: ThemeConfig = {
     { url: interiorsUrl, firstgid: 1025, image: 'interiors', imagewidth: 256, imageheight: 1424, tilewidth: 16, tileheight: 16, columns: 16, tilecount: 1424 },
   ],
   primarySeatNames: [
-    'desk-ceo',
+    'desk-reception',
     'pc-1', 'pc-2', 'pc-3', 'pc-4', 'pc-5', 'pc-6',
     'desk-chief-architect', 'desk-product-manager', 'desk-team-lead',
     'desk-backend-engineer', 'desk-ui-ux-expert', 'desk-data-engineer',
     'desk-project-manager', 'desk-market-researcher', 'desk-agent-organizer',
+    'pc-7', 'pc-8', 'pc-9', 'pc-10', 'pc-11', 'pc-12', 'pc-13', 'pc-14', 'pc-15',
   ],
   cafeSeatNames: ['cafe-seat-1', 'cafe-seat-2', 'cafe-seat-3', 'cafe-seat-4'],
   cafeStands: [
@@ -215,6 +218,33 @@ export const OFFICE_THEME: ThemeConfig = {
     defaultCharacter: DEFAULT_CHARACTER,
   },
 };
+
+/** The three OQVIAN floors share art and interactions but have distinct maps
+ *  and desk claim orders. Each map retains the original prop anchors, so the
+ *  calendar, boards, clock and coffee interactions remain valid. */
+export const OFFICE_FLOOR_THEMES: Record<OfficeFloorNumber, ThemeConfig> = {
+  1: OFFICE_THEME,
+  2: {
+    ...OFFICE_THEME,
+    mapRaw: floor2MapRaw,
+    primarySeatNames: [
+      'desk-ceo', 'desk-ciso', 'desk-hr', 'desk-finance', 'desk-operations',
+      ...OFFICE_THEME.primarySeatNames.filter((name) => name !== 'desk-reception')
+    ]
+  },
+  3: {
+    ...OFFICE_THEME,
+    mapRaw: floor3MapRaw,
+    primarySeatNames: [
+      'desk-product-director', 'desk-product', 'desk-design', 'desk-data', 'desk-ai',
+      ...OFFICE_THEME.primarySeatNames.filter((name) => name !== 'desk-reception')
+    ]
+  }
+};
+
+export function officeThemeForFloor(floor: OfficeFloorNumber): ThemeConfig {
+  return OFFICE_FLOOR_THEMES[floor];
+}
 
 /** Brooklyn Nine-Nine — the 99th precinct (TV-show offices Phase 2, structure).
  *  The map (brooklyn99.tmj) is a precinct bullpen: Captain Holt's glass office

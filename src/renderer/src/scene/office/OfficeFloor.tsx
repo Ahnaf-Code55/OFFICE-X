@@ -13,10 +13,11 @@ import { hexToNumber, DEFAULT_CHARACTER } from './cast';
 import { pickSoloLine, pickExchange, type BreakSpot } from './cafeteriaLines';
 import { colors } from '@/design/tokens';
 import { loadTheme, resolveThemeMap, themeTilesetUrls } from './themeLoader';
+import { floorForAgent, isOfficeFloorNumber, type OfficeFloorNumber } from '@shared/officeFloors';
 import {
   installContextLossRecovery, planInitFailure, DEFAULT_MAX_INIT_RETRIES
 } from './glRecovery';
-import type { Tile, Facing, ErrandKind, ErrandSpot } from './themeRegistry';
+import { officeThemeForFloor, type Tile, type Facing, type ErrandKind, type ErrandSpot } from './themeRegistry';
 import {
   getRemotePresence, publishRemotePresence, subscribeRemotePresence,
   type RemotePresenceAgent, type RemotePresencePeer
@@ -195,6 +196,19 @@ export function OfficeFloor() {
   // The active office theme (store mirror of config.officeTheme). Changing it
   // tears down and rebuilds the whole scene on the new map/cast (see deps below).
   const officeTheme = useStore((s) => s.officeTheme);
+  const selectedAgentId = useStore((s) => s.selectedId);
+  const selectedAgentFloor = useStore((s) => s.agents.find((a) => a.id === s.selectedId)?.floor);
+  const [viewFloor, setViewFloor] = useState<OfficeFloorNumber>(() => {
+    try {
+      const saved = Number(window.localStorage.getItem('officex.viewFloor'));
+      if (isOfficeFloorNumber(saved)) return saved;
+    } catch { /* disabled storage */ }
+    return 1;
+  });
+  const switchFloor = (floor: OfficeFloorNumber) => {
+    setViewFloor(floor);
+    try { window.localStorage.setItem('officex.viewFloor', String(floor)); } catch { /* disabled storage */ }
+  };
 
   // Is the floor actually on screen? A fullscreen terminal or file editor covers
   // it completely, and a hidden window shows nothing at all — but the Pixi ticker
@@ -260,7 +274,8 @@ export function OfficeFloor() {
 
     const init = async () => {
       // Load the active theme bundle (falls back to 'office' on a bad/absent bundle).
-      const theme = await loadTheme(officeTheme);
+      const selectedFloor = officeTheme === 'office' ? viewFloor : 1;
+      const theme = officeTheme === 'office' ? officeThemeForFloor(selectedFloor) : await loadTheme(officeTheme);
       await app.init({
         background: hexNum(theme.palette.background),
         antialias: false,
@@ -305,6 +320,25 @@ export function OfficeFloor() {
       const mapRenderer = new TiledMapRenderer(resolveThemeMap(theme), tilesetTextures);
       world.addChild(mapRenderer.getContainer());
       const charLayer = mapRenderer.getCharacterContainer();
+      if (officeTheme === 'office') {
+        const labels = new Container();
+        labels.eventMode = 'none';
+        for (const [name, zone] of mapRenderer.getAllZones()) {
+          if (name === 'boardroom' && selectedFloor === 3) continue; // same room as meeting-room-a
+          const caption = name.replace(/-/g, ' ').toUpperCase();
+          const plate = new Graphics();
+          const width = Math.min(zone.width * mapRenderer.tileSize - 4, caption.length * 5.4 + 10);
+          plate.roundRect(0, 0, width, 12, 2).fill({ color: 0x142d44, alpha: 0.78 });
+          plate.x = zone.x * mapRenderer.tileSize + 3;
+          plate.y = zone.y * mapRenderer.tileSize + 3;
+          labels.addChild(plate);
+          const title = new Text({ text: caption, style: { fontFamily: 'monospace', fontSize: 7, fill: 0xf4eddc } });
+          title.x = plate.x + 5;
+          title.y = plate.y + 2;
+          labels.addChild(title);
+        }
+        mapRenderer.getContainer().addChild(labels);
+      }
       const tileCount = mapRenderer.getContainer().children.reduce(
         (n, c) => n + ((c as Container).children?.length ?? 0), 0);
       console.log(`[OfficeFloor] map ${mapRenderer.width}x${mapRenderer.height}, ${tileCount} tile sprites rendered`);
@@ -392,12 +426,12 @@ export function OfficeFloor() {
       }
       if (waitTiles.length === 0) waitTiles.push(entrance);
 
-      // Seat 0 is desk-ceo — "Michael's room" — reserved for the god agent.
-      // All other workers claim seats from 1 onward.
+      // Only floor 2 reserves seat 0 (CEO office) for the orchestrator.
       const GOD_SEAT = 0;
+      const workerFirstSeat = selectedFloor === 2 ? 1 : 0;
       const claimSeat = (agent: Agent): number | null => {
         if (agent.isGod) { seatClaims.add(GOD_SEAT); return GOD_SEAT; }
-        for (let i = 1; i < seatTiles.length; i++) {
+        for (let i = workerFirstSeat; i < seatTiles.length; i++) {
           if (!seatClaims.has(i) && !remoteSeatClaims.has(i)) { seatClaims.add(i); return i; }
         }
         return null;
@@ -1405,7 +1439,7 @@ export function OfficeFloor() {
         const frames = await theme.cast.getFrames(charName);
         // Bail if the agent was removed (or scene torn down) while loading.
         if (mountIdRef.current !== mountId) return;
-        if (!useStore.getState().agents.some((a) => a.id === agent.id)) {
+        if (!useStore.getState().agents.some((a) => a.id === agent.id && floorForAgent(a) === selectedFloor)) {
           if (seatIndex != null) seatClaims.delete(seatIndex);
           return;
         }
@@ -1590,6 +1624,7 @@ export function OfficeFloor() {
 
       const syncAgents = () => {
         const { agents } = useStore.getState();
+        const visibleAgents = agents.filter((agent) => floorForAgent(agent) === selectedFloor);
         const seenTeamAgentIds = new Set<string>();
         const teamPresence = agents.slice(0, 32).flatMap((agent) => {
           // Keep the validated original local ID so teammate control actions can
@@ -1605,15 +1640,16 @@ export function OfficeFloor() {
             id,
             name: agent.name.replace(/[\/\\\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 32) || 'AI teammate',
             character: agent.character,
-            status
+            status,
+            floor: floorForAgent(agent)
           }];
         });
         void window.cth.setOrgPresence(teamPresence);
-        const present = new Set(agents.map((a) => a.id));
+        const present = new Set(visibleAgents.map((a) => a.id));
         for (const id of Array.from(runtimes.keys())) {
           if (!present.has(id)) removeCharacter(id);
         }
-        for (const agent of agents) {
+        for (const agent of visibleAgents) {
           const rt = runtimes.get(agent.id);
           if (!rt) void addCharacter(agent);
           else applyState(agent, rt);
@@ -1628,7 +1664,7 @@ export function OfficeFloor() {
       const labelFor = (agent: RemotePresenceAgent, peer: RemotePresencePeer) =>
         `${agent.name} · ${peer.name}`;
       const claimRemoteSeat = (): number | null => {
-        for (let i = 1; i < seatTiles.length; i++) {
+        for (let i = workerFirstSeat; i < seatTiles.length; i++) {
           if (!seatClaims.has(i) && !remoteSeatClaims.has(i)) {
             remoteSeatClaims.add(i);
             return i;
@@ -1678,7 +1714,7 @@ export function OfficeFloor() {
         // The peer may leave, or the scene may be remounted, while sprite frames load.
         let currentPeer = getRemotePresence().find((p) => p.id === peer.id);
         let currentAgent = currentPeer?.agents.find((a) => remoteId(peer.id, a.id) === id);
-        if (mountIdRef.current !== mountId || !currentPeer || !currentAgent) {
+        if (mountIdRef.current !== mountId || !currentPeer || !currentAgent || floorForAgent(currentAgent) !== selectedFloor) {
           remoteSeatClaims.delete(seatIndex);
           return;
         }
@@ -1694,14 +1730,14 @@ export function OfficeFloor() {
             return;
           }
           if (mountIdRef.current !== mountId || !getRemotePresence().some((p) =>
-            p.id === peer.id && p.agents.some((a) => remoteId(p.id, a.id) === id))) {
+            p.id === peer.id && p.agents.some((a) => remoteId(p.id, a.id) === id && floorForAgent(a) === selectedFloor))) {
             remoteSeatClaims.delete(seatIndex);
             return;
           }
         }
         const latestPeer = getRemotePresence().find((p) => p.id === peer.id);
         const latestAgent = latestPeer?.agents.find((a) => remoteId(peer.id, a.id) === id);
-        if (mountIdRef.current !== mountId || !latestPeer || !latestAgent) {
+        if (mountIdRef.current !== mountId || !latestPeer || !latestAgent || floorForAgent(latestAgent) !== selectedFloor) {
           remoteSeatClaims.delete(seatIndex);
           return;
         }
@@ -1738,7 +1774,9 @@ export function OfficeFloor() {
         applyRemoteState(currentAgent, runtime);
       };
       const syncRemotePresence = () => {
-        const guests = getRemotePresence().flatMap((peer) => peer.agents.map((agent) => ({ peer, agent, id: remoteId(peer.id, agent.id) })));
+        const guests = getRemotePresence().flatMap((peer) => peer.agents
+          .filter((agent) => floorForAgent(agent) === selectedFloor)
+          .map((agent) => ({ peer, agent, id: remoteId(peer.id, agent.id) })));
         const present = new Set(guests.map((guest) => guest.id));
         for (const id of [...remoteRuntimes.keys()]) if (!present.has(id)) removeRemoteCharacter(id);
         for (const { peer, agent, id } of guests) {
@@ -1950,7 +1988,12 @@ export function OfficeFloor() {
       appRef.current = null;
       while (host.firstChild) host.removeChild(host.firstChild);
     };
-  }, [officeTheme, glGeneration, i18n.language]);
+  }, [officeTheme, viewFloor, glGeneration, i18n.language]);
+
+  const selectedAgent = selectedAgentId
+    ? useStore.getState().agents.find((agent) => agent.id === selectedAgentId)
+    : undefined;
+  void selectedAgentFloor; // subscribe so an external floor assignment refreshes the move control
 
   return (
     <div
@@ -1962,6 +2005,33 @@ export function OfficeFloor() {
       }}
     >
       <div ref={hostRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', imageRendering: 'pixelated' }} />
+      {officeTheme === 'office' && (
+        <div role="group" aria-label="Office floors" style={{
+          position: 'absolute', zIndex: 20, top: 10, left: 10, display: 'flex', gap: 4,
+          alignItems: 'center', flexWrap: 'wrap', maxWidth: '70%', padding: 5,
+          background: 'rgba(15, 30, 43, 0.9)', border: '1px solid #7e9db2',
+          color: '#f4eddc', fontFamily: 'monospace', fontSize: 10
+        }}>
+          {([1, 2, 3] as const).map((floor) => (
+            <button key={floor} type="button" aria-label={`Show floor ${floor}`}
+              aria-pressed={viewFloor === floor} onClick={() => switchFloor(floor)}
+              style={{
+                border: '1px solid #9bb7c6', padding: '4px 6px', cursor: 'pointer',
+                background: viewFloor === floor ? '#d7e5bb' : '#263e50',
+                color: viewFloor === floor ? '#142d44' : '#f4eddc', fontFamily: 'inherit', fontSize: 'inherit'
+              }}>
+              {floor === 1 ? '1 · Lobby' : floor === 2 ? '2 · Leadership' : '3 · Product / AI'}
+            </button>
+          ))}
+          {selectedAgent && floorForAgent(selectedAgent) !== viewFloor && (
+            <button type="button" aria-label={`Move ${selectedAgent.name} to floor ${viewFloor}`}
+              onClick={() => useStore.getState().updateAgent(selectedAgent.id, { floor: viewFloor })}
+              style={{ border: '1px solid #d7e5bb', background: '#263e50', color: '#f4eddc', padding: '4px 6px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}>
+              Move {selectedAgent.name} here
+            </button>
+          )}
+        </div>
+      )}
       <SharedOfficeRoster />
     </div>
   );
