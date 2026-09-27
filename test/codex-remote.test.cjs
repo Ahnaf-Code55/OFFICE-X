@@ -102,3 +102,12 @@ writable_roots = ["/home/user/projects", "/mnt/shared"]
     'sandbox_workspace_write.writable_roots=["/home/user/projects","/mnt/shared","/home/user/hive"]'
   );
 });
+
+test('remote resume drops approval and sandbox overrides Codex rejects', () => {
+  const endpoint = 'unix:///tmp/codex.sock';
+  assert.deepEqual(
+    withCodexRemoteArgs(['resume', 'sid', '-a', 'never', '-s', 'workspace-write', '--sandbox=read-only', '--full-auto', '--model', 'm', 'hi'], endpoint),
+    ['--remote', endpoint, 'resume', 'sid', '--model', 'm', 'hi']);
+  assert.deepEqual(withCodexRemoteArgs(['-a', 'never', 'hi'], endpoint), ['--remote', endpoint, '-a', 'never', 'hi'],
+    'a fresh remote session keeps its permissions');
+});

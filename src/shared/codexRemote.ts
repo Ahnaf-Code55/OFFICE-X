@@ -91,8 +91,25 @@ export function codexRemoteWritableRootsConfig(
   return `sandbox_workspace_write.writable_roots=${JSON.stringify(uniqueRoots)}`;
 }
 
+/** Codex refuses approval/sandbox overrides when resuming a remote task ("Permission
+ *  overrides are not supported when resuming a remote task"); the resumed thread keeps
+ *  the permissions it was created with. Valued flags take their next argument. */
+const RESUME_PERMISSION_FLAGS = new Map<string, boolean>([
+  ['-a', true], ['--ask-for-approval', true], ['-s', true], ['--sandbox', true],
+  ['--full-auto', false], ['--dangerously-bypass-approvals-and-sandbox', false]
+]);
+
 /** Global options must precede `resume`, so prepend the endpoint in all cases. */
 export function withCodexRemoteArgs(args: string[], endpoint: string): string[] {
   if (args.includes('--remote')) return args;
+  if (args[0] === 'resume') {
+    const kept: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const [flag] = args[i].split('=', 1);
+      if (!RESUME_PERMISSION_FLAGS.has(flag)) kept.push(args[i]);
+      else if (RESUME_PERMISSION_FLAGS.get(flag) && !args[i].includes('=')) i++;
+    }
+    args = kept;
+  }
   return ['--remote', endpoint, ...args];
 }
