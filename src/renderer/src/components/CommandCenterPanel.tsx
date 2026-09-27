@@ -341,7 +341,8 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
           )
         )}
         {tab === 'chat' && <TeamChat />}
-        {tab === 'meeting' && <MeetingRoom />}
+        {/* Always mounted: switching tabs must not hang up the call. */}
+        <div style={{ display: tab === 'meeting' ? 'contents' : 'none' }}><MeetingRoom /></div>
         {tab === 'floor' && <FloorTab seed={dispatchSeed} />}
         {tab === 'tasks' && <TasksKanban />}
         {tab === 'human' && <AskMeTab />}

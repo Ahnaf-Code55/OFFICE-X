@@ -64,6 +64,7 @@ function Room({ onLeave }: { onLeave: () => void }) {
     p.busy = true;
     const message = p.queue.shift()!;
     try {
+      if (p.ctx.state === 'suspended') await p.ctx.resume();
       const wav = await window.cth.synthesizeVoice(message.text);
       if (wav && playback.current === p) {
         const buffer = await p.ctx.decodeAudioData(wav.slice().buffer);
