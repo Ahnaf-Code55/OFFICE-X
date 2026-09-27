@@ -21,7 +21,7 @@ export type ParsedTeamAction =
   | { type: 'agent-prompt'; agentId: string; prompt: string }
   | { type: 'terminal-input'; agentId: string; input: string }
   | { type: 'terminal-stream'; agentId: string; output: string; sequence: number; streamId: string; gap: boolean }
-  | { type: 'chat'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string };
+  | { type: 'chat'; channel: 'leadership' | 'managers' | 'everyone'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string };
 
 /** Base64 image budget: keeps a sealed chat envelope under MAX_TEAM_MESSAGE_BYTES. */
 export const MAX_CHAT_IMAGE_CHARS = 150_000;
@@ -97,7 +97,8 @@ export function parseTeamAction(input: {
       sequence: body.sequence as number, streamId: body.streamId, gap: body.gap };
   }
   if (message.action === 'chat') {
-    if (!exactKeys(body, ['text', 'image', 'authorKind', 'authorName'])
+    if (!exactKeys(body, ['channel', 'text', 'image', 'authorKind', 'authorName'])
+      || (body.channel !== 'leadership' && body.channel !== 'managers' && body.channel !== 'everyone')
       || typeof body.text !== 'string' || body.text.length > MAX_CHAT_TEXT
       || typeof body.image !== 'string' || body.image.length > MAX_CHAT_IMAGE_CHARS
       || (body.image !== '' && !CHAT_IMAGE.test(body.image))
@@ -105,7 +106,7 @@ export function parseTeamAction(input: {
       || (!body.text.trim() && !body.image)) {
       throw new Error('invalid teammate chat message');
     }
-    return { type: 'chat', text: body.text.trim(), image: body.image, authorKind: body.authorKind,
+    return { type: 'chat', channel: body.channel, text: body.text.trim(), image: body.image, authorKind: body.authorKind,
       authorName: text(body.authorName, 1, 60, 'chat author') };
   }
   throw new Error(`unsupported teammate action: ${message.action}`);

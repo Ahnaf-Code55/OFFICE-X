@@ -50,7 +50,7 @@ import {
 import { isTeamDeviceId, sealTeamMessage, type TeamMessage } from '../shared/teamProtocol';
 import { acceptIncomingTeamEnvelope } from './teamIngress';
 import { dispatchTeamAction } from './teamDispatch';
-import { createChat } from './chat';
+import { CHAT_CHANNELS, createChat, type ChatChannel, type ChatTier } from './chat';
 import { MAX_CHAT_IMAGE_CHARS, MAX_CHAT_TEXT } from './teamActions';
 import {
   appendTriggerHistory, clearTriggerHistory, listTriggerHistory, updateTriggerHistory
@@ -4492,7 +4492,7 @@ function dispatchTeamMessage(message: TeamMessage, peerId: string): void {
         if (!win.isDestroyed()) win.webContents.send('org:terminalOutput', payload);
       }
     },
-    receiveChat: (command) => chat.receiveRemote({ memberName: member.displayName, text: command.text, image: command.image,
+    receiveChat: (command) => chat.receiveRemote({ memberName: member.displayName, channel: command.channel, text: command.text, image: command.image,
       authorKind: command.authorKind, authorName: command.authorName })
   });
   if (outcome.type === 'terminal-stream' || outcome.type === 'chat') return;
@@ -4988,10 +4988,11 @@ hive.onChat = (agentId, body) => chat.receiveAgent(agentId, body);
 const isAppWindow = (event: Electron.IpcMainInvokeEvent): boolean =>
   [...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id);
 ipcMain.handle('chat:list', (event) => (isAppWindow(event) ? chat.list() : []));
-ipcMain.handle('chat:getAgents', (event) => (isAppWindow(event) ? chat.participants() : []));
-ipcMain.handle('chat:setAgents', (event, ids: unknown) => {
-  if (!isAppWindow(event) || !Array.isArray(ids) || !ids.every((id) => typeof id === 'string')) return false;
-  chat.setParticipants(ids as string[]);
+ipcMain.handle('chat:getTiers', (event) => (isAppWindow(event) ? chat.tiers() : {}));
+ipcMain.handle('chat:setTier', (event, agentId: unknown, tier: unknown) => {
+  if (!isAppWindow(event) || typeof agentId !== 'string'
+    || !(['off', 'staff', 'middle', 'leadership'] as unknown[]).includes(tier)) return false;
+  chat.setTier(agentId, tier as ChatTier);
   return true;
 });
 ipcMain.handle('chat:send', async (event, raw: unknown) => {
@@ -4999,12 +5000,13 @@ ipcMain.handle('chat:send', async (event, raw: unknown) => {
   const value = (raw ?? {}) as Record<string, unknown>;
   const text = typeof value.text === 'string' ? value.text.trim() : '';
   const image = typeof value.image === 'string' ? value.image : '';
-  if (text.length > MAX_CHAT_TEXT || image.length > MAX_CHAT_IMAGE_CHARS || (!text && !image)
+  const channel = value.channel as ChatChannel;
+  if (!CHAT_CHANNELS.includes(channel) || text.length > MAX_CHAT_TEXT || image.length > MAX_CHAT_IMAGE_CHARS || (!text && !image)
     || (image && !/^data:image\/(png|jpeg|webp);base64,/.test(image))) {
     return { ok: false, error: 'message is empty or too large' };
   }
   try {
-    await chat.post(text, image);
+    await chat.post(channel, text, image);
     return { ok: true };
   } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
 });

@@ -13,7 +13,7 @@ export type TeamDispatchOutcome =
   | { type: 'agent-prompt'; decision: 'auto-allowed'; agentId: string; prompt: string }
   | { type: 'terminal-input'; decision: 'auto-allowed'; agentId: string; input: string }
   | { type: 'terminal-stream'; decision: 'auto-allowed'; agentId: string; output: string; sequence: number; streamId: string; gap: boolean }
-  | { type: 'chat'; decision: 'auto-allowed'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string };
+  | { type: 'chat'; decision: 'auto-allowed'; channel: 'leadership' | 'managers' | 'everyone'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string };
 
 export interface TeamDispatchInput {
   message: TeamMessage;

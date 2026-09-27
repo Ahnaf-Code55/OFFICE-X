@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
-import type { ChatView } from '../main/chat';
+import type { ChatChannel, ChatTier, ChatView } from '../main/chat';
 import type { AgentProvider } from '../shared/agentProvider';
 import type { HireManifest } from '../shared/hire';
 export type { HireManifest } from '../shared/hire';
@@ -1265,9 +1265,10 @@ const api = {
     return () => ipcRenderer.removeListener('org:terminalOutput', listener);
   },
   listChat: (): Promise<ChatView[]> => ipcRenderer.invoke('chat:list'),
-  sendChat: (text: string, image = ''): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('chat:send', { text, image }),
-  getChatAgents: (): Promise<string[]> => ipcRenderer.invoke('chat:getAgents'),
-  setChatAgents: (ids: string[]): Promise<boolean> => ipcRenderer.invoke('chat:setAgents', ids),
+  sendChat: (channel: ChatChannel, text: string, image = ''): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('chat:send', { channel, text, image }),
+  getChatTiers: (): Promise<Record<string, ChatTier>> => ipcRenderer.invoke('chat:getTiers'),
+  setChatTier: (agentId: string, tier: ChatTier): Promise<boolean> => ipcRenderer.invoke('chat:setTier', agentId, tier),
   onChatMessage: (cb: (message: ChatView) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, message: ChatView) => cb(message);
     ipcRenderer.on('chat:message', listener);
