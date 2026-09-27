@@ -37,17 +37,14 @@ const SHIPPED = {
   ],
   antigravity: [
     [undefined, "CLI default"],
-    ["Gemini 3.1 Pro (High)", "Gemini 3.1 Pro · High"],
-    ["Gemini 3.1 Pro (Low)", "Gemini 3.1 Pro · Low"],
-    ["Gemini 3.7 Flash (High)", "Gemini 3.7 Flash · High"],
-    ["Gemini 3.7 Flash (Medium)", "Gemini 3.7 Flash · Med"],
-    ["Gemini 3.7 Flash (Low)", "Gemini 3.7 Flash · Low"],
-    ["Gemini 3.5 Flash (High)", "Gemini 3.5 Flash · High"],
-    ["Gemini 3.5 Flash (Medium)", "Gemini 3.5 Flash · Med"],
-    ["Gemini 3.5 Flash (Low)", "Gemini 3.5 Flash · Low"],
-    ["Claude Sonnet 4.6 (Thinking)", "Claude Sonnet 4.6"],
-    ["Claude Opus 4.6 (Thinking)", "Claude Opus 4.6"],
-    ["GPT-OSS 120B (Medium)", "GPT-OSS 120B"]
+    ["gemini-3.8-flash-high", "Gemini 3.8 Flash · High"],
+    ["gemini-3.8-flash-medium", "Gemini 3.8 Flash · Med"],
+    ["gemini-3.7-flash-high", "Gemini 3.7 Flash · High"],
+    ["gemini-3.7-flash-medium", "Gemini 3.7 Flash · Med"],
+    ["gemini-3.6-flash-high", "Gemini 3.6 Flash · High"],
+    ["gemini-3.6-flash-medium", "Gemini 3.6 Flash · Med"],
+    ["gemini-3.1-pro-high", "Gemini 3.1 Pro · High"],
+    ["claude-sonnet-4-6", "Claude Sonnet 4.6"]
   ],
   qwen: [
     [undefined, "default"],

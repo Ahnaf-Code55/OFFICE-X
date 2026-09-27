@@ -320,7 +320,7 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     hookBridge: 'agy', // installAgyHooks() → ~/.gemini/.../hooks.json (translating shim)
     canReceiveInbox: true, // via the agy-hook bridge (Stop→drain); verified agy honors hook decisions
     initialPromptFlag: '-i', // agy --prompt-interactive: orient the session, then continue
-    recommendedOrchestratorModel: 'Gemini 3.1 Pro (High)', // agy takes the display-name label
+    recommendedOrchestratorModel: 'gemini-3.1-pro-high', // agy --model takes the slug from `agy models`
     resumeFlag: '--conversation' // agy: resume a previous conversation by ID
   },
   {
