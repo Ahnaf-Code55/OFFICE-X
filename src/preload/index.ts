@@ -1279,6 +1279,15 @@ const api = {
     ipcRenderer.on('chat:message', listener);
     return () => ipcRenderer.removeListener('chat:message', listener);
   },
+  setMeetingMic: (live: boolean): Promise<boolean> => ipcRenderer.invoke('meeting:setMic', live),
+  transcribeVoice: (pcm16kMono: Int16Array): Promise<string> =>
+    ipcRenderer.invoke('voice:transcribe', new Uint8Array(pcm16kMono.buffer, pcm16kMono.byteOffset, pcm16kMono.byteLength)),
+  synthesizeVoice: (text: string): Promise<Uint8Array | null> => ipcRenderer.invoke('voice:synthesize', text),
+  onVoiceDownloadProgress: (cb: (value: { asset: string; phase: string; receivedBytes: number; totalBytes: number | null }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, value: Parameters<typeof cb>[0]) => cb(value);
+    ipcRenderer.on('voice:download-progress', listener);
+    return () => ipcRenderer.removeListener('voice:download-progress', listener);
+  },
   onOrgPresence: (cb: (snapshot: TeamPresenceSnapshot) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, snapshot: TeamPresenceSnapshot) => cb(snapshot);
     ipcRenderer.on('org:presence', listener);

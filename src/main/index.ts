@@ -50,6 +50,9 @@ import {
 import { isTeamDeviceId, sealTeamMessage, type TeamMessage } from '../shared/teamProtocol';
 import { acceptIncomingTeamEnvelope } from './teamIngress';
 import { dispatchTeamAction } from './teamDispatch';
+import { transcribe } from './voice/stt';
+import { synthesize } from './voice/tts';
+import { onVoiceDownloadProgress } from './voice/assets';
 import { CHAT_CHANNELS, createChat, type ChatChannel, type ChatTier } from './chat';
 import { MAX_CHAT_IMAGE_CHARS, MAX_CHAT_TEXT } from './teamActions';
 import {
@@ -2411,7 +2414,7 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
   // xterm/editor copy must keep working).
   const micFeatureLive = (): boolean => {
     const cfg = readConfig();
-    return cfg.freeflowEnabled === true || cfg.realtimeVoiceEnabled === true;
+    return cfg.freeflowEnabled === true || cfg.realtimeVoiceEnabled === true || meetingMicLive;
   };
   const ses = win.webContents.session;
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
@@ -5012,6 +5015,26 @@ ipcMain.handle('chat:send', async (event, raw: unknown) => {
     await chat.post(channel, text, image);
     return { ok: true };
   } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+});
+// Meeting room: local Whisper STT + Piper TTS on top of the team chat.
+let meetingMicLive = false;
+const MAX_UTTERANCE_BYTES = 30 * 16_000 * 2;
+onVoiceDownloadProgress((progress) => {
+  for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('voice:download-progress', progress);
+});
+ipcMain.handle('meeting:setMic', (event, live: unknown) => {
+  if (isAppWindow(event)) meetingMicLive = live === true;
+  return meetingMicLive;
+});
+ipcMain.handle('voice:transcribe', async (event, pcm: unknown) => {
+  if (!isAppWindow(event) || !(pcm instanceof Uint8Array) || pcm.byteLength < 2 || pcm.byteLength > MAX_UTTERANCE_BYTES) return '';
+  const text = await transcribe(new Int16Array(new Uint8Array(pcm).buffer));
+  // Whisper marks silence/noise as [BLANK_AUDIO], (music), etc.
+  return text.replace(/\[[^\]]*\]|\([^)]*\)/g, '').trim();
+});
+ipcMain.handle('voice:synthesize', async (event, text: unknown) => {
+  if (!isAppWindow(event) || typeof text !== 'string' || !text.trim()) return null;
+  return new Uint8Array((await synthesize(text.slice(0, MAX_CHAT_TEXT))).wav);
 });
 ipcMain.handle('org:sendTaskRequest', async (event, raw: unknown) => {
   if (![...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id)) return { ok: false, error: 'invalid renderer' };
