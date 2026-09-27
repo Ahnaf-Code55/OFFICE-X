@@ -1555,7 +1555,14 @@ export class HiveManager {
     return msg;
   }
 
+  /** Group chat sink: an agent reply addressed `to: "chat"` goes to the room, not an inbox. */
+  onChat?: (fromAgentId: string, body: string) => void;
+
   private routeMessage(msg: HiveMessage): void {
+    if (msg.to === 'chat') {
+      this.onChat?.(msg.from, msg.body);
+      return;
+    }
     if (msg.hops > HOP_CAP) {
       // loop guard — drop a runaway message rather than let agents ping-pong.
       // There's no human queue to fall back on; the god agent owns conflicts.

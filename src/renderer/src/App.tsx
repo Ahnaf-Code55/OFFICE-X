@@ -31,6 +31,7 @@ import { FullscreenTerminal } from '@/components/FullscreenTerminal';
 import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
 import { IdePanel } from '@/ide/IdePanel';
 import { useHoldOptionToTalk } from '@/freeflow/holdOption';
+import { TeamChat } from '@/components/meeting/TeamChat';
 import brandLogo from './assets/brand/officex-logo.svg?url';
 
 // Injected at build time from package.json (see electron.vite.config.ts).
@@ -478,6 +479,7 @@ export function App() {
       </div>
 
       <AgentStrip config={config} />
+      <TeamChat />
 
       {addAgentOpen && (
         <AddAgentModal

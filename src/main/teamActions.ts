@@ -20,7 +20,13 @@ export type ParsedTeamAction =
   | { type: 'task-request'; title: string; message: string }
   | { type: 'agent-prompt'; agentId: string; prompt: string }
   | { type: 'terminal-input'; agentId: string; input: string }
-  | { type: 'terminal-stream'; agentId: string; output: string; sequence: number; streamId: string; gap: boolean };
+  | { type: 'terminal-stream'; agentId: string; output: string; sequence: number; streamId: string; gap: boolean }
+  | { type: 'chat'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string };
+
+/** Base64 image budget: keeps a sealed chat envelope under MAX_TEAM_MESSAGE_BYTES. */
+export const MAX_CHAT_IMAGE_CHARS = 150_000;
+export const MAX_CHAT_TEXT = 4000;
+const CHAT_IMAGE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
 
 export function teamTaskRequestRequiresApproval(access: PeerControlLevel, mode: TriggerMode): boolean {
   return access === 'task-requests' || mode !== 'allow-all';
@@ -89,6 +95,18 @@ export function parseTeamAction(input: {
     }
     return { type: 'terminal-stream', agentId: body.agentId, output: body.output,
       sequence: body.sequence as number, streamId: body.streamId, gap: body.gap };
+  }
+  if (message.action === 'chat') {
+    if (!exactKeys(body, ['text', 'image', 'authorKind', 'authorName'])
+      || typeof body.text !== 'string' || body.text.length > MAX_CHAT_TEXT
+      || typeof body.image !== 'string' || body.image.length > MAX_CHAT_IMAGE_CHARS
+      || (body.image !== '' && !CHAT_IMAGE.test(body.image))
+      || (body.authorKind !== 'human' && body.authorKind !== 'agent')
+      || (!body.text.trim() && !body.image)) {
+      throw new Error('invalid teammate chat message');
+    }
+    return { type: 'chat', text: body.text.trim(), image: body.image, authorKind: body.authorKind,
+      authorName: text(body.authorName, 1, 60, 'chat author') };
   }
   throw new Error(`unsupported teammate action: ${message.action}`);
 }

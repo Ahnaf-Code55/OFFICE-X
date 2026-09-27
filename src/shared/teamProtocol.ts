@@ -30,7 +30,8 @@ export type TeamAction =
   | 'agent-status'
   | 'agent-prompt'
   | 'terminal-stream'
-  | 'terminal-input';
+  | 'terminal-input'
+  | 'chat';
 
 export interface TeamIdentity {
   deviceId: string;
@@ -111,12 +112,12 @@ export interface TeamEnvelope {
 }
 
 const ACTIONS: readonly TeamAction[] = [
-  'presence', 'task-request', 'agent-status', 'agent-prompt', 'terminal-stream', 'terminal-input'
+  'presence', 'task-request', 'agent-status', 'agent-prompt', 'terminal-stream', 'terminal-input', 'chat'
 ];
 
 const ALLOWED_ACTIONS: Record<PeerControlLevel, ReadonlySet<TeamAction>> = {
-  'task-requests': new Set(['presence', 'task-request', 'agent-status']),
-  delegated: new Set(['presence', 'task-request', 'agent-status', 'agent-prompt']),
+  'task-requests': new Set(['presence', 'task-request', 'agent-status', 'chat']),
+  delegated: new Set(['presence', 'task-request', 'agent-status', 'agent-prompt', 'chat']),
   'full-control': new Set(ACTIONS)
 };
 

@@ -12,7 +12,8 @@ export type TeamDispatchOutcome =
   | { type: 'task-request'; decision: 'pending' | 'auto-allowed'; title: string; message: string }
   | { type: 'agent-prompt'; decision: 'auto-allowed'; agentId: string; prompt: string }
   | { type: 'terminal-input'; decision: 'auto-allowed'; agentId: string; input: string }
-  | { type: 'terminal-stream'; decision: 'auto-allowed'; agentId: string; output: string; sequence: number; streamId: string; gap: boolean };
+  | { type: 'terminal-stream'; decision: 'auto-allowed'; agentId: string; output: string; sequence: number; streamId: string; gap: boolean }
+  | { type: 'chat'; decision: 'auto-allowed'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string };
 
 export interface TeamDispatchInput {
   message: TeamMessage;
@@ -24,6 +25,7 @@ export interface TeamDispatchInput {
   steerAgent: (agentId: string, prompt: string) => void;
   writeTerminal: (agentId: string, input: string) => void;
   receiveTerminalStream: (stream: Extract<ParsedTeamAction, { type: 'terminal-stream' }>) => void;
+  receiveChat: (chat: Extract<ParsedTeamAction, { type: 'chat' }>) => void;
 }
 
 /** Revalidate the current member level, parse the exact payload, and perform the
@@ -50,6 +52,10 @@ export function dispatchTeamAction(input: TeamDispatchInput): TeamDispatchOutcom
   }
   if (command.type === 'terminal-input') {
     input.writeTerminal(command.agentId, command.input);
+    return { ...command, decision: 'auto-allowed' };
+  }
+  if (command.type === 'chat') {
+    input.receiveChat(command);
     return { ...command, decision: 'auto-allowed' };
   }
   input.receiveTerminalStream(command);

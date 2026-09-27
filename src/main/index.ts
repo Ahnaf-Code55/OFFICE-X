@@ -50,6 +50,8 @@ import {
 import { isTeamDeviceId, sealTeamMessage, type TeamMessage } from '../shared/teamProtocol';
 import { acceptIncomingTeamEnvelope } from './teamIngress';
 import { dispatchTeamAction } from './teamDispatch';
+import { createChat } from './chat';
+import { MAX_CHAT_IMAGE_CHARS, MAX_CHAT_TEXT } from './teamActions';
 import {
   appendTriggerHistory, clearTriggerHistory, listTriggerHistory, updateTriggerHistory
 } from './triggerHistory';
@@ -4489,9 +4491,11 @@ function dispatchTeamMessage(message: TeamMessage, peerId: string): void {
       for (const win of allWindows) {
         if (!win.isDestroyed()) win.webContents.send('org:terminalOutput', payload);
       }
-    }
+    },
+    receiveChat: (command) => chat.receiveRemote({ memberName: member.displayName, text: command.text, image: command.image,
+      authorKind: command.authorKind, authorName: command.authorName })
   });
-  if (outcome.type === 'terminal-stream') return;
+  if (outcome.type === 'terminal-stream' || outcome.type === 'chat') return;
   const entry = (input: { title?: string; body: string; kind: InboundKind; decision?: 'pending' | 'auto-allowed' }) => appendTriggerHistory({
     source: 'org', sourceId: member.memberId, sourceName: member.displayName, direction: 'inbound',
     peer: member.displayName, title: input.title, body: input.body, kind: input.kind,
@@ -4511,7 +4515,7 @@ function dispatchTeamMessage(message: TeamMessage, peerId: string): void {
   notifyTriggerHistoryUpdated();
 }
 
-async function sendTeamMessage(memberId: string, action: 'task-request' | 'agent-prompt' | 'terminal-input', body: Record<string, unknown>): Promise<void> {
+async function sendTeamMessage(memberId: string, action: 'task-request' | 'agent-prompt' | 'terminal-input' | 'chat', body: Record<string, unknown>): Promise<void> {
   const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
   if (!cfg.enabled || !cfg.officeId || !teamTransport || !persist.isOpen) throw new Error('shared office transport is not ready');
   const member = persist.getTrustedTeamMember(cfg.officeId, memberId);
@@ -4543,6 +4547,7 @@ async function sendTeamMessage(memberId: string, action: 'task-request' | 'agent
     } catch (error) { lastError = error; }
   }
   if (lastError) throw lastError;
+  if (action === 'chat') return; // the chat room is its own history
   appendTriggerHistory({ source: 'org', sourceId: member.memberId, sourceName: member.displayName,
     direction: 'outbound', peer: member.displayName,
     title: action === 'task-request' ? String(body.title ?? 'Task request') : action === 'agent-prompt' ? 'Agent prompt' : 'Terminal input',
@@ -4956,6 +4961,52 @@ ipcMain.handle('org:transportStatus', () => {
     peerId: teamTransport?.peerId,
     error: teamTransportError || undefined
   };
+});
+const chat = createChat({
+  dir: join(app.getPath('userData'), 'chat'),
+  getKv: (key) => persist.getKv(key),
+  setKv: (key, value) => persist.setKv(key, value),
+  myName: () => (readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER).displayName.trim() || 'Me',
+  agentName: (agentId) => {
+    const agent = hive.registry().agents[agentId];
+    return agent && !agent.archived ? agent.name : undefined;
+  },
+  deliverToAgent: (agentId, subject, body) => { hive.send({ to: agentId, act: 'inform', subject, body }, 'chat'); },
+  sendToTeammates: async (body) => {
+    const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
+    if (!cfg.enabled || !cfg.officeId || !persist.isOpen) return;
+    const members = persist.listTrustedTeamMembers(cfg.officeId);
+    const results = await Promise.allSettled(members.map((m) => sendTeamMessage(m.memberId, 'chat', body)));
+    const failed = members.filter((_, i) => results[i].status === 'rejected').map((m) => m.displayName);
+    if (failed.length) throw new Error(`not delivered to ${failed.join(', ')}`);
+  },
+  emit: (message) => {
+    for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:message', message);
+  }
+});
+hive.onChat = (agentId, body) => chat.receiveAgent(agentId, body);
+const isAppWindow = (event: Electron.IpcMainInvokeEvent): boolean =>
+  [...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id);
+ipcMain.handle('chat:list', (event) => (isAppWindow(event) ? chat.list() : []));
+ipcMain.handle('chat:getAgents', (event) => (isAppWindow(event) ? chat.participants() : []));
+ipcMain.handle('chat:setAgents', (event, ids: unknown) => {
+  if (!isAppWindow(event) || !Array.isArray(ids) || !ids.every((id) => typeof id === 'string')) return false;
+  chat.setParticipants(ids as string[]);
+  return true;
+});
+ipcMain.handle('chat:send', async (event, raw: unknown) => {
+  if (!isAppWindow(event)) return { ok: false, error: 'invalid renderer' };
+  const value = (raw ?? {}) as Record<string, unknown>;
+  const text = typeof value.text === 'string' ? value.text.trim() : '';
+  const image = typeof value.image === 'string' ? value.image : '';
+  if (text.length > MAX_CHAT_TEXT || image.length > MAX_CHAT_IMAGE_CHARS || (!text && !image)
+    || (image && !/^data:image\/(png|jpeg|webp);base64,/.test(image))) {
+    return { ok: false, error: 'message is empty or too large' };
+  }
+  try {
+    await chat.post(text, image);
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
 });
 ipcMain.handle('org:sendTaskRequest', async (event, raw: unknown) => {
   if (![...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id)) return { ok: false, error: 'invalid renderer' };
