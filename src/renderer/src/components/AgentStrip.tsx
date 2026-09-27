@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentCard } from './AgentCard';
+import { RemoteAgentCards } from './RemoteAgentCards';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { useStore, type Agent } from '@/store/store';
@@ -231,6 +232,7 @@ export function AgentStrip({ config }: AgentStripProps) {
           })()}
         </div>
       ))}
+      <RemoteAgentCards />
       <PixelButton
         variant="secondary"
         size="lg"
