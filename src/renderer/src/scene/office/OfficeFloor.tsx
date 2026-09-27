@@ -1428,6 +1428,9 @@ export function OfficeFloor() {
       const taskBoardPoll = setInterval(() => { void pollTaskBoard(); }, 5000);
       (app as any).__taskBoardPoll = taskBoardPoll;
 
+      // Agents already hired when this floor is built start at their desks; only
+      // agents hired afterwards walk in from the door (a floor switch rebuilds the scene).
+      const seatedAtBuild = new Set(useStore.getState().agents.map((a) => a.id));
       const addCharacter = async (agent: Agent) => {
         const charName = theme.cast.byName[agent.character] ? agent.character : theme.cast.defaultCharacter;
         const member = theme.cast.byName[charName];
@@ -1449,7 +1452,7 @@ export function OfficeFloor() {
           frames,
           seatTile,
           seatDirection: facingForSeat(seatTile),
-          spawnTile: entrance, // walk in from the office door
+          spawnTile: seatedAtBuild.has(agent.id) ? seatTile : entrance,
           glowColor: hexNum(colors.accent[agent.accent]) ?? hexToNumber(member.shirt),
           onClick: (id) => useStore.getState().select(id),
         });
@@ -1756,7 +1759,7 @@ export function OfficeFloor() {
           frames,
           seatTile,
           seatDirection: facingForSeat(seatTile),
-          spawnTile: entrance,
+          spawnTile: seatTile,
           glowColor: hexToNumber(member.shirt),
           onClick: () => { /* guests are not selectable local agents */ }
         });
