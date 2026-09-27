@@ -4980,6 +4980,7 @@ const chat = createChat({
     const agent = hive.registry().agents[agentId];
     return agent && !agent.archived ? agent.name : undefined;
   },
+  agentIds: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived).map(([id]) => id),
   // Same path as Slack: the renderer queues the prompt and types it once the agent is idle.
   deliverToAgent: (agentId, _subject, body) => {
     for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:agentPrompt', { agentId, text: body });

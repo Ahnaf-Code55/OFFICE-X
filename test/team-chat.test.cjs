@@ -67,3 +67,20 @@ test('agents hear the room, never their own reply, and stop after the AI turn ca
   chat.receiveAgent('zzz', 'not a participant');
   assert.equal(chat.list().some((m) => m.text === 'not a participant'), false);
 });
+
+test('every live agent hears #everyone by default until switched off', async () => {
+  const kv = new Map();
+  const delivered = [];
+  const chat = createChat({
+    dir: fs.mkdtempSync(path.join(os.tmpdir(), 'chat-')),
+    getKv: (k) => kv.get(k), setKv: (k, v) => kv.set(k, v),
+    myName: () => 'Me', agentName: (id) => id, agentIds: () => ['a', 'b'],
+    deliverToAgent: (id) => delivered.push(id),
+    sendToTeammates: async () => {}, emit: () => {}
+  });
+  await chat.post('everyone', 'all hands', '');
+  assert.deepEqual(delivered.splice(0), ['a', 'b']);
+  chat.setTier('b', 'off');
+  await chat.post('everyone', 'again', '');
+  assert.deepEqual(delivered, ['a']);
+});

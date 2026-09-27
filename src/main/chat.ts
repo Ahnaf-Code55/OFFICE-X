@@ -40,6 +40,8 @@ export interface ChatDeps {
   setKv: (key: string, value: unknown) => void;
   myName: () => string;
   agentName: (agentId: string) => string | undefined;
+  /** Live agents; any without a stored tier sit in #Everyone by default. */
+  agentIds?: () => string[];
   deliverToAgent: (agentId: string, subject: string, body: string) => void;
   sendToTeammates: (body: { channel: ChatChannel; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string }) => Promise<void>;
   emit: (message: ChatView) => void;
@@ -56,7 +58,13 @@ export function createChat(deps: ChatDeps) {
   /** Channel each agent was last addressed from; its outbox reply lands there. */
   const replyChannel = new Map<string, ChatChannel>();
   const log = (): ChatMessage[] => (deps.getKv<ChatMessage[]>(LOG_KEY) ?? []).map((m) => ({ ...m, channel: m.channel ?? 'everyone' }));
-  const tiers = (): Record<string, ChatTier> => deps.getKv<Record<string, ChatTier>>(TIERS_KEY) ?? {};
+  const stored = (): Record<string, ChatTier> => deps.getKv<Record<string, ChatTier>>(TIERS_KEY) ?? {};
+  const tiers = (): Record<string, ChatTier> => {
+    const all: Record<string, ChatTier> = {};
+    for (const id of deps.agentIds?.() ?? []) all[id] = 'staff';
+    for (const [id, tier] of Object.entries(stored())) if (tier === 'off') delete all[id]; else all[id] = tier;
+    return all;
+  };
 
   const view = (m: ChatMessage): ChatView => {
     if (!m.imagePath || !existsSync(m.imagePath)) return m;
@@ -106,9 +114,7 @@ export function createChat(deps: ChatDeps) {
     list: (): ChatView[] => log().slice(-100).map(view),
     tiers,
     setTier(agentId: string, tier: ChatTier): void {
-      const next = { ...tiers() };
-      if (tier === 'off') delete next[agentId]; else next[agentId] = tier;
-      deps.setKv(TIERS_KEY, next);
+      deps.setKv(TIERS_KEY, { ...stored(), [agentId]: tier }); // 'off' kept, so it overrides the default
     },
 
     /** The local user posts. */
