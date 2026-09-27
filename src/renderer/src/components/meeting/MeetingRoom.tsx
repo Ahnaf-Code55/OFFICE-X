@@ -169,7 +169,8 @@ function Room({ onLeave }: { onLeave: () => void }) {
   }, []);
 
   const heard = agents.filter((a) => RANK[tiers[a.id] ?? 'off'] >= CHANNEL_RANK[channel]);
-  const humans = [...new Set(messages.filter((m) => m.authorKind === 'human' && m.channel === channel && Date.now() - m.ts < 30 * 60_000).map((m) => m.authorName))];
+  // Teammates and their AIs (remote posts carry no local agentId).
+  const humans = [...new Set(messages.filter((m) => m.authorKind !== 'me' && !m.agentId && m.channel === channel && Date.now() - m.ts < 30 * 60_000).map((m) => m.authorName))];
   const last = messages.filter((m) => m.channel === channel).at(-1);
 
   const send = async () => {
