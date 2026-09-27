@@ -1501,6 +1501,7 @@ export class HiveManager {
       '',
       'HIVE PROTOCOL — follow it every task:',
       `1. At the START of a task, read ${inDir('memory.md')} and EVERY file in ${inDir('inbox')} (messages other agents sent you). After handling an inbox message, move its file into ${inDir('inbox', '.done')}.`,
+      `1b. DISCUSS BEFORE WORK: before starting any task, post your plan to the team chat (write ONE outbox message with "to":"chat", "act":"inform", your plan as "body"), then END your turn. Teammates' replies wake you; start the work on your next turn, taking their input into account. When you hit a problem or need a skill you lack, ask the team the same way (or message the right agent directly) instead of guessing. When a teammate asks for help and you can give it, answer.`,
       `2. Record durable facts, decisions, and context by appending to ${inDir('memory.md')}.`,
       `3. To ask another agent for something or share information, write ONE message JSON into ${inDir('outbox')} (schema in PROTOCOL.md). NEVER write into another agent's folder — the orchestrator delivers your outbox.`,
       '4. At the END of a task, append what you learned to memory.md so future-you remembers.',

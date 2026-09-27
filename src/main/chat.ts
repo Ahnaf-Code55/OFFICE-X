@@ -51,7 +51,7 @@ const LOG_KEY = 'chat:log';
 const TIERS_KEY = 'chat:tiers';
 const MAX_LOG = 200;
 /** AI messages allowed in a row before a human must speak again. */
-export const MAX_AI_TURNS = 6;
+export const MAX_AI_TURNS = 12;
 
 export function createChat(deps: ChatDeps) {
   const aiTurns: Partial<Record<ChatChannel, number>> = {};
@@ -104,6 +104,7 @@ export function createChat(deps: ChatDeps) {
     return [
       `New message in the OFFICE-X team chat channel #${latest.channel} from ${latest.authorName}.`,
       '', 'Recent conversation (oldest first):', ...recent, '',
+      'If it is not for you and you have nothing useful to add (no help, no objection), do NOT reply.',
       'Reply briefly. To reply, write ONE message JSON into your hive outbox with',
       '"to":"chat", "act":"inform", a short "subject", and your reply as "body". Keep it short and conversational.',
       'You may open any [image: path] above to see a screenshot.'
