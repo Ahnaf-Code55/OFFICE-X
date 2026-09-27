@@ -53,6 +53,7 @@ import { dispatchTeamAction } from './teamDispatch';
 import { transcribe } from './voice/stt';
 import { synthesize } from './voice/tts';
 import { onVoiceDownloadProgress } from './voice/assets';
+import { localModels, pullModel } from './ollama';
 import { CHAT_CHANNELS, createChat, type ChatChannel, type ChatTier } from './chat';
 import { MAX_CHAT_IMAGE_CHARS, MAX_CHAT_TEXT } from './teamActions';
 import {
@@ -5049,6 +5050,8 @@ ipcMain.handle('voice:transcribe', async (event, pcm: unknown) => {
   // Whisper marks silence/noise as [BLANK_AUDIO], (music), etc.
   return text.replace(/\[[^\]]*\]|\([^)]*\)/g, '').trim();
 });
+ipcMain.handle('ollama:list', (event) => (isAppWindow(event) ? localModels() : null));
+ipcMain.handle('ollama:pull', (event, name: unknown) => (isAppWindow(event) && typeof name === 'string' && name.length < 300 ? pullModel(name) : { ok: false, error: 'invalid model' }));
 ipcMain.handle('voice:synthesize', async (event, text: unknown) => {
   if (!isAppWindow(event) || typeof text !== 'string' || !text.trim()) return null;
   return new Uint8Array((await synthesize(text.slice(0, MAX_CHAT_TEXT))).wav);

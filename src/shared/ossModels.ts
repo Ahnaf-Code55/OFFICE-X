@@ -40,8 +40,24 @@ export const OSS_LOCAL_PICKS: OssLocalPick[] = [
   { label: 'Mistral Small 24B', tag: 'mistral-small:24b', minRam: '16–32 GB' },
   { label: 'GLM-4.7-Flash', tag: 'glm-4.7-flash', minRam: '32 GB' },
   { label: 'Llama 3.3 70B', tag: 'llama3.3:70b', minRam: '64 GB' },
-  { label: 'gpt-oss 120B', tag: 'gpt-oss:120b', minRam: '96 GB' }
+  { label: 'gpt-oss 120B', tag: 'gpt-oss:120b', minRam: '96 GB' },
+  // Security (red/blue team) fine-tunes, pulled straight from Hugging Face GGUFs.
+  { label: 'DeepHat V1 7B · security', tag: 'hf.co/mradermacher/DeepHat-V1-7B-GGUF:Q4_K_M', minRam: '8 GB' },
+  { label: 'RedSage Qwen3 8B · security', tag: 'hf.co/mradermacher/RedSage-Qwen3-8B-Ins-GGUF:Q4_K_M', minRam: '8 GB' },
+  { label: 'RedSage Qwen3 8B DPO · security', tag: 'hf.co/mradermacher/RedSage-Qwen3-8B-DPO-GGUF:Q4_K_M', minRam: '8 GB' }
 ];
+
+/** First number in a minRam label ('16–32 GB' → 16). */
+export const minRamGb = (label: string): number => Number(/\d+/.exec(label)?.[0] ?? 0);
+
+/** Hugging Face repo / URL / tag → the Ollama tag that pulls it (`hf.co/<user>/<repo>[:quant]`),
+ *  or null if it isn't one. Plain Ollama tags (`qwen3:8b`) pass through. */
+export function ollamaTagFor(input: string): string | null {
+  const raw = input.trim().replace(/^https?:\/\/(www\.)?(huggingface\.co|hf\.co)\//, 'hf.co/').replace(/\/(tree|blob)\/.*$/, '');
+  const hf = /^(?:hf\.co\/)?([\w.-]+\/[\w.-]+)(?::([\w.-]+))?$/.exec(raw);
+  if (hf && (raw.startsWith('hf.co/') || raw.includes('/'))) return `hf.co/${hf[1]}${hf[2] ? `:${hf[2]}` : ''}`;
+  return /^[\w.-]+(?::[\w.-]+)?$/.test(raw) ? raw : null;
+}
 
 /** §7.B — Third-party OSS-provider quick-picks (BYOK). */
 export const OSS_PROVIDER_PICKS: OssProviderPick[] = [

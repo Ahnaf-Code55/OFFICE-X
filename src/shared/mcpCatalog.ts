@@ -60,6 +60,15 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     defaultEnabled: true
   },
   {
+    id: 'headroom',
+    label: 'Headroom',
+    description: 'Compresses long tool output and context locally so agents spend fewer tokens. No secrets.',
+    // Needs `pip install "headroom-ai[mcp]"` (puts `headroom` on PATH).
+    spec: { command: 'headroom', args: ['mcp', 'serve'] },
+    tier: 'safe-readonly',
+    defaultEnabled: true
+  },
+  {
     id: 'time',
     label: 'Time',
     description: 'Current time and timezone conversions.',

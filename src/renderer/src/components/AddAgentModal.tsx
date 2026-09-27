@@ -13,6 +13,8 @@ import { hireQueueProgress } from '@shared/hireQueue';
 import { MCP_CATALOG } from '@shared/mcpCatalog';
 import {
   OSS_LOCAL_PICKS,
+  minRamGb,
+  ollamaTagFor,
   OSS_PROVIDER_PICKS,
   localSlugFor,
   hasOssQuickPicks,
@@ -44,6 +46,63 @@ const ossGroupHead: CSSProperties = {
   fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
   color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 4
 };
+
+/** Local (Ollama) models: what's installed here, which picks fit this device's RAM,
+ *  and a Hugging Face pull box (`user/repo[:quant]` or a huggingface.co URL). */
+function LocalModels({ provider, model, accent, onPick, title }: {
+  provider: AgentProvider; model?: string; accent: AccentColorName; onPick: (slug: string) => void; title: string;
+}) {
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof window.cth.localModels>>>(null);
+  const [repo, setRepo] = useState('');
+  const [note, setNote] = useState('');
+  const [pulling, setPulling] = useState(false);
+  const refresh = () => { void window.cth.localModels().then(setInfo); };
+  useEffect(refresh, []);
+  const installed = new Set(info?.models.map((m) => m.name) ?? []);
+  const has = (tag: string) => installed.has(tag) || installed.has(`${tag}:latest`);
+  const pull = async (name: string) => {
+    setPulling(true); setNote(`Downloading ${name}… (large models take a while)`);
+    const r = await window.cth.pullLocalModel(name);
+    setPulling(false);
+    if (r.ok && r.name) { setNote(`Ready: ${r.name}`); setRepo(''); onPick(localSlugFor(provider, r.name)); refresh(); }
+    else setNote(r.error ?? 'download failed');
+  };
+  const small: CSSProperties = { fontSize: 11, color: 'var(--cth-ink-500)' };
+  return <div style={{ display: 'grid', gap: 6 }}>
+    <div style={ossGroupHead}>{title}{info ? ` · this device: ${info.ramGb} GB RAM` : ''}</div>
+    {info && !info.running && <div style={small}>Ollama isn't running. Install it from ollama.com, then run `ollama serve`.</div>}
+    {!!info?.models.length && <div>
+      <div style={small}>Installed now:</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {info.models.map((m) => {
+          const slug = localSlugFor(provider, m.name);
+          return <button key={m.name} onClick={() => onPick(slug)} title={`${slug} · ${m.sizeGb} GB`} style={ossChip(model === slug, accent)}>✓ {m.name}</button>;
+        })}
+      </div>
+    </div>}
+    <div style={small}>Suggested (⬇ = not downloaded yet, click to get it):</div>
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {OSS_LOCAL_PICKS.map((p) => {
+        const slug = localSlugFor(provider, p.tag);
+        const tooBig = !!info && minRamGb(p.minRam) > info.ramGb;
+        const got = has(p.tag);
+        return <button key={p.tag} disabled={pulling}
+          onClick={() => (got ? onPick(slug) : void pull(p.tag))}
+          title={`${slug} · needs ~${p.minRam}${tooBig ? ' — too big for this device' : ''}`}
+          style={{ ...ossChip(model === slug, accent), opacity: tooBig ? 0.45 : 1 }}>
+          {got ? '✓ ' : '⬇ '}{p.label}{tooBig ? ' (too big)' : ''}
+        </button>;
+      })}
+    </div>
+    <div style={{ display: 'flex', gap: 6 }}>
+      <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="Hugging Face: user/repo-GGUF[:Q4_K_M] or URL"
+        style={{ flex: 1, minWidth: 0, fontSize: 12 }} aria-label="Hugging Face model to download" />
+      <button disabled={pulling || !ollamaTagFor(repo)} onClick={() => void pull(repo)} style={ossChip(false, accent)}>pull</button>
+    </div>
+    {note && <div style={small}>{note}</div>}
+  </div>;
+}
+
 // One-click briefing templates — fill Description + Goal with a sharp, ready-to-run
 // role so a user isn't staring at a blank field (item 7). The template BRIEFINGS
 // stay English (they become agent prompts — see the i18n report); only the
@@ -971,25 +1030,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                     {hasOssQuickPicks(provider) && (
                       <Row label={tr('addAgent.ossModels')}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          <div>
-                            <div style={ossGroupHead}>{tr('addAgent.ossLocal')}</div>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              {OSS_LOCAL_PICKS.map((p) => {
-                                const slug = localSlugFor(provider, p.tag);
-                                const active = (model ?? '') === slug;
-                                return (
-                                  <button
-                                    key={p.tag}
-                                    onClick={() => pickModel(slug)}
-                                    title={tr('addAgent.ossLocalTitle', { slug, ram: p.minRam, tag: p.tag })}
-                                    style={ossChip(active, accent)}
-                                  >
-                                    {p.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
+                          <LocalModels provider={provider} model={model} accent={accent} onPick={pickModel} title={tr('addAgent.ossLocal')} />
                           <div>
                             <div style={ossGroupHead}>{tr('addAgent.ossByok')}</div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
