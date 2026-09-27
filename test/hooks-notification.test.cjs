@@ -3,7 +3,7 @@
  * HookServer's Notification/Stop branches are what tell the harness an agent is
  * idle and safe to deliver queued mail to. Both branches call notify() but
  * neither had test coverage:
- *   - Stop notifies "finished — idle" at most once per 5 min per agent (not SubagentStop)
+ *   - Stop notifies "finished — idle" at most once per 5 min across all agents (not SubagentStop)
  *   - Notification only notifies when notification_type === 'idle' OR the message
  *     text contains "waiting for your input" (case-insensitive) — this string
  *     fallback exists for CLI versions/locales that don't send the structured
@@ -94,11 +94,12 @@ test('Stop with stop_hook_active does NOT re-notify', async (t) => {
     'an already-re-entered Stop boundary must not spam another toast');
 });
 
-test('SubagentStop and repeat Stops within 5 min do NOT toast', async (t) => {
+test('SubagentStop and repeat Stops within 5 min (any agent) do NOT toast', async (t) => {
   const { fire } = await floor(t);
   await fire({ hook_event_name: 'SubagentStop' });
   await fire({ hook_event_name: 'Stop' });
   await fire({ hook_event_name: 'Stop' });
+  await fire({ hook_event_name: 'Stop', agent_id: 'flux-2' });
   assert.equal(notifications.length, 1);
 });
 
