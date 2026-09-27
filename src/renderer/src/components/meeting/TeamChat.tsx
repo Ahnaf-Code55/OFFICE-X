@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/store/store';
+import { PixelButton } from '../PixelButton';
 
 type ChatView = Awaited<ReturnType<typeof window.cth.listChat>>[number];
 type Channel = ChatView['channel'];
@@ -36,15 +37,20 @@ async function toChatImage(file: Blob): Promise<string> {
   throw new Error('image is too large to send');
 }
 
-const panel: React.CSSProperties = {
-  position: 'fixed', right: 16, bottom: 72, zIndex: 50, width: 'min(380px, calc(100vw - 32px))', height: 'min(520px, 70vh)',
-  display: 'flex', flexDirection: 'column', background: '#141a24f2', border: '1px solid #ffffff22', borderRadius: 10,
-  color: '#dce8fa', fontSize: 12, boxShadow: '0 8px 30px #0008'
+/** Route team-chat prompts into agent queues. Mounted once at App level so AIs
+ *  hear the room even while the chat tab is closed. */
+export function useChatAgentPrompts(): void {
+  useEffect(() => window.cth.onChatAgentPrompt(({ agentId, text }) => useStore.getState().enqueueMessage(agentId, text)), []);
+}
+
+const field: React.CSSProperties = {
+  background: 'var(--cth-paper-100)', color: 'var(--cth-ink-900)', border: '1px solid var(--cth-ink-300)',
+  borderRadius: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 13
 };
 
+/** Command Center tab: #Leadership / #Managers / #Everyone with teammates and AIs. */
 export function TeamChat() {
   const agents = useStore((state) => state.agents);
-  const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatView[]>([]);
   const [channel, setChannel] = useState<Channel>('everyone');
   const [tiers, setTiers] = useState<Record<string, Tier>>({});
@@ -52,27 +58,16 @@ export function TeamChat() {
   const [text, setText] = useState('');
   const [image, setImage] = useState('');
   const [error, setError] = useState('');
-  const [unread, setUnread] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const openRef = useRef(open);
-  openRef.current = open;
 
   useEffect(() => {
     void window.cth.listChat().then(setMessages);
     void window.cth.getChatTiers().then(setTiers);
-    const offPrompt = window.cth.onChatAgentPrompt(({ agentId, text }) => useStore.getState().enqueueMessage(agentId, text));
-    const offMessage = window.cth.onChatMessage((message) => {
-      setMessages((prev) => [...prev, message].slice(-100));
-      if (!openRef.current) setUnread((n) => n + 1);
-    });
-    return () => { offPrompt(); offMessage(); };
+    return window.cth.onChatMessage((message) => setMessages((prev) => [...prev, message].slice(-100)));
   }, []);
 
-  useEffect(() => {
-    if (open) setUnread(0);
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [open, messages]);
+  useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight }); }, [messages, channel]);
 
   const attach = async (file: Blob | null | undefined) => {
     if (!file) return;
@@ -89,68 +84,62 @@ export function TeamChat() {
     setTiers((prev) => ({ ...prev, [id]: tier }));
     void window.cth.setChatTier(id, tier);
   };
-  const tab = (active: boolean): React.CSSProperties => ({
-    flex: 1, padding: '6px 0', border: 0, borderBottom: `2px solid ${active ? '#3a6fd8' : 'transparent'}`,
-    background: 'none', color: active ? '#dce8fa' : '#8998af', cursor: 'pointer', fontSize: 12
-  });
+  const byName = new Map(agents.map((a) => [a.name, a]));
 
-  if (!open) {
-    return <button type="button" onClick={() => setOpen(true)} aria-label="Open team chat"
-      style={{ position: 'fixed', right: 16, bottom: 72, zIndex: 50, padding: '8px 12px', borderRadius: 18, border: '1px solid #ffffff33',
-        background: '#1d2635', color: '#dce8fa', cursor: 'pointer', fontSize: 12 }}>
-      💬 Team chat{unread ? ` (${unread})` : ''}
-    </button>;
-  }
-
-  return <section style={panel} aria-label="Team chat">
-    <header style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderBottom: '1px solid #ffffff18' }}>
-      <strong style={{ flex: 1 }}>Team chat</strong>
-      <button type="button" onClick={() => setOpen(false)} aria-label="Close team chat"
-        style={{ background: 'none', border: 0, color: '#dce8fa', cursor: 'pointer', fontSize: 14 }}>✕</button>
-    </header>
-    <div role="tablist" style={{ display: 'flex', borderBottom: '1px solid #ffffff18' }}>
-      {CHANNELS.map((c) => <button key={c.key} type="button" role="tab" aria-selected={channel === c.key}
-        onClick={() => setChannel(c.key)} style={tab(channel === c.key)}>#{c.label}</button>)}
+  return <section aria-label="Team chat" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--cth-cream-50)', color: 'var(--cth-ink-900)', fontFamily: 'var(--cth-font-ui)', fontSize: 13 }}>
+    <div role="tablist" style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '2px solid var(--cth-ink-100)' }}>
+      {CHANNELS.map((c) => <button key={c.key} type="button" role="tab" aria-selected={channel === c.key} onClick={() => setChannel(c.key)}
+        style={{ flex: 1, padding: '3px 6px', border: 0, cursor: 'pointer', fontFamily: 'var(--cth-font-mono)', fontSize: 12,
+          background: channel === c.key ? 'var(--cth-lemon)' : 'var(--cth-cream-200)', color: channel === c.key ? 'var(--cth-on-accent)' : 'var(--cth-ink-900)',
+          boxShadow: `inset 0 0 0 1px var(${channel === c.key ? '--cth-ink-300' : '--cth-ink-100'})` }}>#{c.label}</button>)}
     </div>
-    <div style={{ padding: '4px 10px', borderBottom: '1px solid #ffffff18' }}>
+    <div style={{ padding: '4px 10px', borderBottom: '1px solid var(--cth-ink-100)' }}>
       <button type="button" onClick={() => setShowRanks((v) => !v)} aria-expanded={showRanks}
-        style={{ background: 'none', border: 0, padding: 0, color: '#8998af', cursor: 'pointer', fontSize: 11 }}>
-        {showRanks ? '▾' : '▸'} AI ranks ({agents.filter((a) => (tiers[a.id] ?? 'off') !== 'off').length} in chat)
+        style={{ background: 'none', border: 0, padding: 0, color: 'var(--cth-ink-500)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--cth-font-mono)' }}>
+        {showRanks ? '▾' : '▸'} who's in chat ({agents.filter((a) => (tiers[a.id] ?? 'off') !== 'off').length} AIs)
       </button>
-      {showRanks && <div style={{ display: 'grid', gap: 4, padding: '4px 0' }}>
-        {agents.length ? agents.map((agent) => <label key={agent.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {showRanks && <div style={{ display: 'grid', gap: 4, padding: '6px 0' }}>
+        {agents.length ? agents.map((agent) => <label key={agent.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</span>
-          <select value={tiers[agent.id] ?? 'off'} onChange={(e) => setTier(agent.id, e.target.value as Tier)}
-            style={{ background: '#0e131b', color: '#dce8fa', border: '1px solid #ffffff33', borderRadius: 4 }}>
+          <select value={tiers[agent.id] ?? 'off'} onChange={(e) => setTier(agent.id, e.target.value as Tier)} style={{ ...field, padding: '2px 4px' }}>
             {TIERS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
           </select>
-        </label>) : <span style={{ color: '#8998af' }}>no agents yet</span>}
-        <span style={{ color: '#8998af', fontSize: 10 }}>Leadership hears every channel, managers hear #Managers and #Everyone, employees hear #Everyone.</span>
+        </label>) : <span style={{ color: 'var(--cth-ink-500)' }}>no agents yet</span>}
+        <span style={{ color: 'var(--cth-ink-500)', fontSize: 11 }}>Leadership hears every channel, managers hear #Managers and #Everyone, employees hear #Everyone.</span>
       </div>}
     </div>
-    <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'grid', gap: 8, alignContent: 'start' }}>
-      {messages.filter((m) => m.channel === channel).map((m) => <div key={m.id} style={{ justifySelf: m.authorKind === 'me' ? 'end' : 'start', maxWidth: '85%' }}>
-        <div style={{ color: m.authorKind === 'agent' ? '#9fd3ff' : '#8998af', fontSize: 10 }}>{m.authorName}</div>
-        <div style={{ background: m.authorKind === 'me' ? '#2a4a7a' : '#232c3b', borderRadius: 8, padding: '6px 8px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-          {m.text}
-          {m.image && <img src={m.image} alt="Shared screenshot" style={{ display: 'block', maxWidth: '100%', marginTop: m.text ? 6 : 0, borderRadius: 4 }} />}
-        </div>
-      </div>)}
+    <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'grid', gap: 10, alignContent: 'start' }}>
+      {messages.filter((m) => m.channel === channel).map((m) => {
+        const agent = m.authorKind === 'agent' ? byName.get(m.authorName) : undefined;
+        return <div key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <div style={{ width: 24, height: 24, flexShrink: 0, background: `var(--cth-${agent?.accent ?? (m.authorKind === 'me' ? 'sky' : 'mint')}-light)`, boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', display: 'grid', placeItems: 'center', fontFamily: 'var(--cth-font-mono)', fontSize: 11 }}>
+            {m.authorName.slice(0, 1).toUpperCase()}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-500)' }}>
+              <strong style={{ color: 'var(--cth-ink-900)' }}>{m.authorKind === 'me' ? 'You' : m.authorName}</strong>
+              {m.authorKind === 'agent' && ' · AI'} · {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </div>
+            <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.text}</div>
+            {m.image && <img src={m.image} alt="Shared screenshot" style={{ display: 'block', maxWidth: '100%', marginTop: 4, boxShadow: '0 0 0 1px var(--cth-ink-300)' }} />}
+          </div>
+        </div>;
+      })}
     </div>
     {image && <div style={{ padding: '0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
-      <img src={image} alt="Screenshot to send" style={{ height: 40, borderRadius: 4 }} />
-      <button type="button" onClick={() => setImage('')} style={{ background: 'none', border: 0, color: '#f4a3a3', cursor: 'pointer' }}>remove</button>
+      <img src={image} alt="Screenshot to send" style={{ height: 40 }} />
+      <button type="button" onClick={() => setImage('')} style={{ background: 'none', border: 0, color: 'var(--cth-coral)', cursor: 'pointer' }}>remove</button>
     </div>}
-    {error && <div role="alert" style={{ padding: '4px 10px', color: '#f4a3a3' }}>{error}</div>}
-    <form onSubmit={(e) => { e.preventDefault(); void send(); }} style={{ display: 'flex', gap: 6, padding: 10 }}>
-      <button type="button" onClick={() => fileRef.current?.click()} aria-label="Attach screenshot"
-        style={{ width: 32, borderRadius: 16, border: '1px solid #ffffff33', background: '#1d2635', color: '#dce8fa', cursor: 'pointer' }}>+</button>
+    {error && <div role="alert" style={{ padding: '4px 10px', color: 'var(--cth-coral)' }}>{error}</div>}
+    <div style={{ display: 'flex', gap: 6, padding: 8, borderTop: '2px solid var(--cth-ink-100)' }}>
+      <PixelButton variant="secondary" size="sm" onClick={() => fileRef.current?.click()} title="Attach screenshot">+</PixelButton>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden
         onChange={(e) => { void attach(e.target.files?.[0]); e.target.value = ''; }} />
-      <input value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} placeholder={`Message #${channel} (paste screenshots)`}
+      <input value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} placeholder={`Message #${channel}`}
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
         onPaste={(e) => { const file = [...e.clipboardData.files].find((f) => f.type.startsWith('image/')); if (file) { e.preventDefault(); void attach(file); } }}
-        style={{ flex: 1, minWidth: 0, padding: '6px 10px', borderRadius: 16, border: '1px solid #ffffff33', background: '#0e131b', color: '#dce8fa' }} />
-      <button type="submit" style={{ padding: '0 12px', borderRadius: 16, border: 0, background: '#3a6fd8', color: '#fff', cursor: 'pointer' }}>Send</button>
-    </form>
+        style={{ ...field, flex: 1, minWidth: 0, padding: '6px 8px' }} />
+      <PixelButton size="sm" onClick={() => void send()}>send</PixelButton>
+    </div>
   </section>;
 }

@@ -31,8 +31,7 @@ import { FullscreenTerminal } from '@/components/FullscreenTerminal';
 import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
 import { IdePanel } from '@/ide/IdePanel';
 import { useHoldOptionToTalk } from '@/freeflow/holdOption';
-import { TeamChat } from '@/components/meeting/TeamChat';
-import { MeetingRoom } from '@/components/meeting/MeetingRoom';
+import { useChatAgentPrompts } from '@/components/meeting/TeamChat';
 import brandLogo from './assets/brand/officex-logo.svg?url';
 
 // Injected at build time from package.json (see electron.vite.config.ts).
@@ -43,6 +42,8 @@ export function App() {
   useGodNameSync();
   // Mirror the document only for a user who has picked an RTL app language.
   useDirectionSync();
+  // AIs in the team chat hear the room even while its tab is closed.
+  useChatAgentPrompts();
   // Let terminals that are ALREADY open follow a language switch too.
   useArabicTerminalSync();
   const agent = useStore(selectedAgent);
@@ -480,8 +481,6 @@ export function App() {
       </div>
 
       <AgentStrip config={config} />
-      <TeamChat />
-      <MeetingRoom />
 
       {addAgentOpen && (
         <AddAgentModal

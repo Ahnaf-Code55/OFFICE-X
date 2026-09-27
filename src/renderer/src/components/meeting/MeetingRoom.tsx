@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useStore } from '@/store/store';
+import { useStore, type Agent } from '@/store/store';
+import { PixelButton } from '../PixelButton';
+import { SpritePortrait } from '../SpritePortrait';
 
 type ChatView = Awaited<ReturnType<typeof window.cth.listChat>>[number];
 type Channel = ChatView['channel'];
@@ -17,14 +19,17 @@ const END_SILENCE_MS = 700;
 const MIN_SPEECH_MS = 400;
 const MAX_SPEECH_MS = 25_000;
 
-function Orb({ name, speaking, color }: { name: string; speaking: boolean; color: string }) {
-  return <div style={{ display: 'grid', justifyItems: 'center', gap: 8 }}>
+/** One seat at the table: the office sprite (or an initial for humans), ringed while speaking. */
+function Seat({ name, speaking, accent, character }: { name: string; speaking: boolean; accent: string; character?: Agent['character'] }) {
+  return <div style={{ display: 'grid', justifyItems: 'center', gap: 6, width: 88 }}>
     <div style={{
-      width: 96, height: 96, borderRadius: '50%', background: `radial-gradient(circle at 35% 30%, #fff8, ${color} 45%, #0b1220 100%)`,
-      transform: speaking ? 'scale(1.15)' : 'scale(1)', boxShadow: speaking ? `0 0 40px 8px ${color}aa` : `0 0 12px ${color}44`,
-      transition: 'transform 150ms, box-shadow 150ms'
-    }} />
-    <span style={{ fontSize: 12, color: '#dce8fa' }}>{name}</span>
+      width: 64, height: 64, display: 'grid', placeItems: 'center', background: `var(--cth-${accent}-light)`,
+      boxShadow: speaking ? `0 0 0 3px var(--cth-${accent}), 0 0 0 5px var(--cth-ink-900)` : 'inset 0 0 0 1px var(--cth-ink-300)',
+      transform: speaking ? 'translateY(-3px)' : 'none', transition: 'transform 120ms, box-shadow 120ms'
+    }}>
+      {character ? <SpritePortrait character={character} scale={2} /> : <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 22 }}>{name.slice(0, 1).toUpperCase()}</span>}
+    </div>
+    <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{name}</span>
   </div>;
 }
 
@@ -171,40 +176,39 @@ function Room({ onLeave }: { onLeave: () => void }) {
     const result = await window.cth.sendChat(channel, text);
     if (result.ok) setText(''); else setStatus(result.error ?? 'could not send');
   };
-  const button = (bg: string): React.CSSProperties => ({ padding: '10px 16px', borderRadius: 22, border: 0, background: bg, color: '#fff', cursor: 'pointer', fontSize: 13 });
+  const field: React.CSSProperties = { background: 'var(--cth-paper-100)', color: 'var(--cth-ink-900)', border: '1px solid var(--cth-ink-300)', fontFamily: 'var(--cth-font-ui)', fontSize: 13 };
 
-  return <section aria-label="Meeting room" style={{ position: 'fixed', inset: 0, zIndex: 60, background: '#0b0f16f5', color: '#dce8fa', display: 'flex', flexDirection: 'column' }}>
-    <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px' }}>
-      <strong style={{ flex: 1 }}>Meeting</strong>
-      <select value={channel} onChange={(e) => { interrupt(); setChannel(e.target.value as Channel); }} aria-label="Meeting channel"
-        style={{ background: '#0e131b', color: '#dce8fa', border: '1px solid #ffffff33', borderRadius: 4, padding: 4 }}>
+  return <section aria-label="Meeting room" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--cth-cream-50)', color: 'var(--cth-ink-900)', fontFamily: 'var(--cth-font-ui)', fontSize: 13 }}>
+    <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderBottom: '2px solid var(--cth-ink-100)' }}>
+      <span style={{ flex: 1, fontFamily: 'var(--cth-font-mono)', fontSize: 12, color: 'var(--cth-ink-500)' }}>● live · {status}</span>
+      <select value={channel} onChange={(e) => { interrupt(); setChannel(e.target.value as Channel); }} aria-label="Meeting channel" style={{ ...field, padding: '2px 4px' }}>
         <option value="everyone">#Everyone</option><option value="managers">#Managers</option><option value="leadership">#Leadership</option>
       </select>
     </header>
-    <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignContent: 'center', justifyContent: 'center', gap: 36, padding: 16 }}>
-      <Orb name={muted ? 'You (muted)' : 'You'} speaking={meSpeaking} color="#3a6fd8" />
-      {humans.map((name) => <Orb key={name} name={name} speaking={speaker === name} color="#39b48a" />)}
-      {heard.map((a) => <Orb key={a.id} name={a.name} speaking={speaker === a.name} color="#b06ad8" />)}
-      {!heard.length && <p style={{ width: '100%', textAlign: 'center', color: '#8998af' }}>No AI can hear #{channel}. Set AI ranks in Team chat.</p>}
+    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexWrap: 'wrap', alignContent: 'center', justifyContent: 'center', gap: 16, padding: 16 }}>
+      <Seat name={muted ? 'You (muted)' : 'You'} speaking={meSpeaking} accent="sky" />
+      {humans.map((name) => <Seat key={name} name={name} speaking={speaker === name} accent="mint" />)}
+      {heard.map((a) => <Seat key={a.id} name={a.name} speaking={speaker === a.name} accent={a.accent} character={a.character} />)}
+      {!heard.length && <p style={{ width: '100%', textAlign: 'center', color: 'var(--cth-ink-500)' }}>No AI can hear #{channel}. Add them in the team chat tab under "who's in chat".</p>}
     </div>
-    <p role="status" style={{ textAlign: 'center', minHeight: 36, margin: '0 16px', color: '#8998af', fontSize: 12 }}>
-      {last ? `${last.authorName}: ${last.text.slice(0, 200)}` : ''}<br />{status}
-    </p>
-    <form onSubmit={(e) => { e.preventDefault(); void send(); }} style={{ display: 'flex', gap: 8, padding: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
+    {last && <p style={{ margin: '0 8px 6px', padding: '6px 8px', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)' }}>
+      <strong>{last.authorKind === 'me' ? 'You' : last.authorName}:</strong> {last.text.slice(0, 200)}
+    </p>}
+    <div style={{ display: 'flex', gap: 6, padding: 8, borderTop: '2px solid var(--cth-ink-100)' }}>
       <input value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} placeholder="Type instead of talking"
-        style={{ flex: '1 1 200px', maxWidth: 420, padding: '10px 14px', borderRadius: 22, border: '1px solid #ffffff33', background: '#0e131b', color: '#dce8fa' }} />
-      <button type="button" onClick={() => setMuted((m) => !m)} aria-pressed={muted} style={button(muted ? '#8a3a3a' : '#2a3547')}>{muted ? 'Unmute' : 'Mute'}</button>
-      <button type="button" onClick={onLeave} style={button('#c0392b')}>Leave</button>
-    </form>
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void send(); } }} style={{ ...field, flex: 1, minWidth: 0, padding: '6px 8px' }} />
+      <PixelButton size="sm" variant="secondary" onClick={() => setMuted((m) => !m)}>{muted ? 'unmute' : 'mute'}</PixelButton>
+      <PixelButton size="sm" variant="destructive" onClick={onLeave}>leave</PixelButton>
+    </div>
   </section>;
 }
 
+/** Command Center tab: join screen, then the room. */
 export function MeetingRoom() {
   const [inMeeting, setInMeeting] = useState(false);
   if (inMeeting) return <Room onLeave={() => setInMeeting(false)} />;
-  return <button type="button" onClick={() => setInMeeting(true)} aria-label="Join voice meeting"
-    style={{ position: 'fixed', right: 16, bottom: 116, zIndex: 50, padding: '8px 12px', borderRadius: 18, border: '1px solid #ffffff33',
-      background: '#1d2635', color: '#dce8fa', cursor: 'pointer', fontSize: 12 }}>
-    🎙 Meeting
-  </button>;
+  return <div style={{ flex: 1, display: 'grid', placeItems: 'center', alignContent: 'center', gap: 10, background: 'var(--cth-cream-50)', color: 'var(--cth-ink-500)', fontFamily: 'var(--cth-font-ui)', fontSize: 13, textAlign: 'center', padding: 16 }}>
+    <span>Talk with your teammates and AIs. Your speech is transcribed locally and replies are read aloud.</span>
+    <PixelButton onClick={() => setInMeeting(true)}>join meeting</PixelButton>
+  </div>;
 }

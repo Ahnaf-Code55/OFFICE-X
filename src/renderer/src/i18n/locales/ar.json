@@ -417,7 +417,9 @@
       "graph": "الرسم",
       "activity": "النشاط",
       "skills": "المهارات",
-      "workers": "العمّال"
+      "workers": "العمّال",
+      "chat": "دردشة الفريق",
+      "meeting": "اجتماع"
     },
     "terminalFullscreen": "الطرفية مفتوحة بملء الشاشة. اضغط Esc لإعادتها.",
     "noTerminal": "{{name}} ليس لديه طرفية حيّة.",
