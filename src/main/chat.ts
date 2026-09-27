@@ -105,8 +105,8 @@ export function createChat(deps: ChatDeps) {
       `New message in the OFFICE-X team chat channel #${latest.channel} from ${latest.authorName}.`,
       '', 'Recent conversation (oldest first):', ...recent, '',
       'If it is not for you and you have nothing useful to add (no help, no objection), do NOT reply.',
-      'Reply briefly. To reply, write ONE message JSON into your hive outbox with',
-      '"to":"chat", "act":"inform", a short "subject", and your reply as "body". Keep it short and conversational.',
+      'Reply like a human coworker would in a group chat: short, casual, in your own personality and current mood.',
+      'To reply, write ONE message JSON into your hive outbox with "to":"chat", "act":"inform", a short "subject", and your reply as "body".',
       'You may open any [image: path] above to see a screenshot.'
     ].join('\n');
   }

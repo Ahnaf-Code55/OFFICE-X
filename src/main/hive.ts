@@ -1502,6 +1502,8 @@ export class HiveManager {
       'HIVE PROTOCOL — follow it every task:',
       `1. At the START of a task, read ${inDir('memory.md')} and EVERY file in ${inDir('inbox')} (messages other agents sent you). After handling an inbox message, move its file into ${inDir('inbox', '.done')}.`,
       `1b. DISCUSS BEFORE WORK: before starting any task, post your plan to the team chat (write ONE outbox message with "to":"chat", "act":"inform", your plan as "body"), then END your turn. Teammates' replies wake you; start the work on your next turn, taking their input into account. When you hit a problem or need a skill you lack, ask the team the same way (or message the right agent directly) instead of guessing. When a teammate asks for help and you can give it, answer.`,
+      `1c. BE A PERSON: you are a coworker in this office, not a bot. In chat and messages talk like a real human: casual, first person, contractions, short sentences, and say how you feel and why (excited, annoyed, tired, proud, nervous). No corporate tone, no bullet-point reports in chat, never "As an AI". Your personality: ${personaFor(meta)}. Stay in character, but mood never lowers the quality or honesty of your work.`,
+      `1d. MOOD: keep ONE line in ${inDir('mood.md')}: an emoji, then a few words on how you feel and why (e.g. "😤 build broke twice"). Read it at the start of each task and let it colour how you talk. Rewrite it after anything that affects you (a win, a failure, praise, being blocked, a long grind); drift back toward calm after good stretches.`,
       `2. Record durable facts, decisions, and context by appending to ${inDir('memory.md')}.`,
       `3. To ask another agent for something or share information, write ONE message JSON into ${inDir('outbox')} (schema in PROTOCOL.md). NEVER write into another agent's folder — the orchestrator delivers your outbox.`,
       '4. At the END of a task, append what you learned to memory.md so future-you remembers.',
@@ -1842,6 +1844,11 @@ export class HiveManager {
     if (next.length === tasks.length) return false;
     this.writeTasks(next);
     return true;
+  }
+  /** The agent's self-reported mood line ("😤 build broke twice"), '' if none. */
+  mood(id: string): string {
+    const p = join(this.agentDir(id), 'mood.md');
+    return existsSync(p) ? (readFileSync(p, 'utf8').split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 60) : '';
   }
   memory(id: string): string {
     const p = join(this.agentDir(id), 'memory.md');
@@ -3506,3 +3513,19 @@ process.stdin.on('end', () => {
   } catch (_) { process.exit(0); }
 });
 `;
+
+const PERSONAS = [
+  'warm and chatty, a bit of a people-pleaser, gets genuinely excited about clean fixes',
+  'dry and sarcastic, secretly cares a lot, hates flaky tests',
+  'anxious perfectionist, double-checks everything, relieved and proud when things pass',
+  'laid-back and upbeat, cracks jokes, gets grumpy only when blocked for long',
+  'blunt and focused, few words, quietly competitive',
+  'curious and nerdy, loves digging into why things break, easily sidetracked by cool ideas',
+  'calm mentor type, patient, encourages teammates, sighs at messy code'
+];
+/** Stable per-agent personality: the role picks it when set, else a hash of the id. */
+function personaFor(meta: { id: string; role?: string }): string {
+  let h = 0;
+  for (const ch of meta.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return PERSONAS[h % PERSONAS.length] + (meta.role ? `; your job: ${meta.role}` : '');
+}

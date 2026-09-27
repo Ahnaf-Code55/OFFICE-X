@@ -59,6 +59,8 @@ export interface Agent {
   note?: string;
   status: StatusKind;
   action: string;
+  /** Self-reported mood line from the agent's mood.md, e.g. "😤 build broke twice". */
+  mood?: string;
   progress: number;
   currentStation?: StationKind;
   carrying?: ToolKind;

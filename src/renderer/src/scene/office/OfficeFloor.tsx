@@ -164,9 +164,13 @@ function loadTexture(url: string): Promise<Texture> {
  *  gave it, then to a caller-supplied generic. Returns '' for the working state
  *  with nothing concrete yet — the bubble renders an animated "…" for that. */
 function liveActivity(agent: Agent, fallback = ''): string {
+  const mood = (agent.mood || '').trim();
   const action = (agent.action || '').trim();
-  if (action) return action;
-  return firstWords(agent.lastPrompt) || fallback;
+  // Idle → say how they feel; busy → the mood's emoji leads the action.
+  if (mood && (!action || action === 'idle')) return mood;
+  const text = action || firstWords(agent.lastPrompt) || fallback;
+  const emoji = /^\S+/.exec(mood)?.[0];
+  return emoji && !/\w/.test(emoji) && text ? `${emoji} ${text}` : text;
 }
 
 /** First few words of the last user prompt, for the desk card. */

@@ -596,6 +596,21 @@ export function useHive(config: HarnessConfig | null): void {
     return () => { clearTimeout(t); clearInterval(iv); };
   }, [config?.onboardingComplete]);
 
+  // 2e) Mood: each agent keeps a one-line mood.md; mirror it onto the floor.
+  useEffect(() => {
+    if (!config?.onboardingComplete) return;
+    const poll = async () => {
+      const { agents, updateAgent } = useStore.getState();
+      for (const a of agents) {
+        const mood = await window.cth.hiveMood(a.id).catch(() => '');
+        if (mood !== (a.mood ?? '')) updateAgent(a.id, { mood });
+      }
+    };
+    const t = setTimeout(poll, 4000);
+    const iv = setInterval(poll, 20000);
+    return () => { clearTimeout(t); clearInterval(iv); };
+  }, [config?.onboardingComplete]);
+
   // 2d) Push-based context gauge: the status-line shim forwards the session's
   //     EXACT context accounting (tokens + real window size) after every
   //     response — no probing, no transcript guesswork.
