@@ -23,7 +23,8 @@ export function UsageFloat() {
   const [limits, setLimits] = useState<Limits>({});
   const [open, setOpen] = useState(true);
   useEffect(() => {
-    const poll = () => { window.cth.usageLimits().then(setLimits).catch(() => undefined); };
+    // Optional call: a renderer hot-reloaded over an older preload has no usageLimits yet.
+    const poll = () => { window.cth.usageLimits?.().then(setLimits).catch(() => undefined); };
     poll();
     const iv = setInterval(poll, 30_000);
     return () => clearInterval(iv);
