@@ -103,3 +103,17 @@ test('an @mention reaches only the named agent and tells it to reply', async () 
   assert.equal(mentions('hi @Fluxy', 'Flux'), false);
   assert.equal(mentions('mail flux@x.com', 'Flux'), false);
 });
+
+test('a message tagging me by first name is flagged for the pop-up', () => {
+  const kv = new Map();
+  const emitted = [];
+  const chat = createChat({
+    dir: fs.mkdtempSync(path.join(os.tmpdir(), 'chat-')),
+    getKv: (k) => kv.get(k), setKv: (k, v) => kv.set(k, v),
+    myName: () => 'Ahnaf Hossain', agentName: (id) => id, agentIds: () => ['a'],
+    deliverToAgent: () => {}, sendToTeammates: async () => {}, emit: (m) => emitted.push(m.mentionsMe)
+  });
+  chat.receiveAgent('a', '@ahnaf done 🎉');
+  chat.receiveAgent('a', 'done, no tag');
+  assert.deepEqual(emitted, [true, false]);
+});

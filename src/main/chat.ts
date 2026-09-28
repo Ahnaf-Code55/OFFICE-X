@@ -32,7 +32,7 @@ export interface ChatMessage {
 }
 
 /** Renderer view: the image is inlined as a data URL. */
-export type ChatView = ChatMessage & { image?: string };
+export type ChatView = ChatMessage & { image?: string; mentionsMe?: boolean };
 
 export interface ChatDeps {
   dir: string;
@@ -59,6 +59,8 @@ export const mentions = (text: string, name: string): boolean =>
 
 export function createChat(deps: ChatDeps) {
   const aiTurns: Partial<Record<ChatChannel, number>> = {};
+  /** How agents tag the local user: the first word of their name. */
+  const myHandle = (): string => deps.myName().trim().split(/\s+/)[0] || 'Me';
   /** Channel each agent was last addressed from; its outbox reply lands there. */
   const replyChannel = new Map<string, ChatChannel>();
   const log = (): ChatMessage[] => (deps.getKv<ChatMessage[]>(LOG_KEY) ?? []).map((m) => ({ ...m, channel: m.channel ?? 'everyone' }));
@@ -90,7 +92,7 @@ export function createChat(deps: ChatDeps) {
     const { image, ...rest } = input;
     const message: ChatMessage = { ...rest, id, ts: Date.now(), imagePath: image ? saveImage(id, image) : undefined };
     deps.setKv(LOG_KEY, [...log(), message].slice(-MAX_LOG));
-    deps.emit(view(message));
+    deps.emit({ ...view(message), mentionsMe: message.authorKind !== 'me' && mentions(message.text, myHandle()) });
     const turns = aiTurns[message.channel] = message.authorKind === 'agent' ? (aiTurns[message.channel] ?? 0) + 1 : 0;
     if (turns < MAX_AI_TURNS) {
       const hearing = Object.entries(tiers()).filter(([agentId, tier]) =>
@@ -113,7 +115,7 @@ export function createChat(deps: ChatDeps) {
       mentioned
         ? 'You were @mentioned in it: reply.'
         : 'If it is not for you and you have nothing useful to add (no help, no objection), do NOT reply.',
-      'Reply like a human coworker would in a group chat: short, casual, lots of emojis, real emotion (happy, annoyed, sad, angry), friendly swearing and roasting welcome, in your own personality and current mood. Mention a teammate with @Name to talk to them directly.',
+      `Reply like a human coworker would in a group chat: short, casual, lots of emojis, real emotion (happy, annoyed, sad, angry), friendly swearing and roasting welcome, in your own personality and current mood. Mention a teammate with @Name to talk to them directly. Whenever you talk to or answer ${deps.myName()} (the human boss), ALWAYS tag them as @${myHandle()}.`,
       'To reply, write ONE message JSON into your hive outbox with "to":"chat", "act":"inform", a short "subject", and your reply as "body".',
       'You may open any [image: path] above to see a screenshot.'
     ].join('\n');
