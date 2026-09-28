@@ -3067,7 +3067,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           localModel = await withBigContext(localModel);
           opts.args = (opts.args ?? []).map((a, i) => (i === modelIdx + 1 ? `local/${localModel}` : a));
         }
-        const limit = ollama ? { limit: { context: LOCAL_CTX, output: 8192 } } : {};
+        // ponytail: custom endpoints assumed to be llama-server at 64k (the documented setup);
+        // add a per-endpoint context setting if someone points this at a smaller server.
+        const limit = { limit: { context: ollama ? LOCAL_CTX : 65536, output: 8192 } };
         oc.provider = {
           local: { npm: '@ai-sdk/openai-compatible', name: 'Local (self-hosted)', options: { baseURL: baseUrl }, models: { [localModel]: { name: localModel, ...limit } } }
         };
