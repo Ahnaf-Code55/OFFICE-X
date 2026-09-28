@@ -3051,7 +3051,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     if (provider === 'opencode') {
       const oc: Record<string, unknown> = { autoupdate: false };
       if (cfg.autoMode) oc.permission = { edit: 'allow', bash: 'allow', webfetch: 'allow' };
-      const baseUrl = cfg.providerBaseUrls?.opencode;
+      // A local/* model with no endpoint set means Ollama on its default port; without
+      // a provider OpenCode silently falls back to its own cloud default (GLM).
+      const baseUrl = cfg.providerBaseUrls?.opencode || (prefix === 'local' ? 'http://127.0.0.1:11434/v1' : '');
       if (baseUrl) {
         // Register the model id the user actually selects (the part after 'local/')
         // so `--model local/<id>` resolves; default to 'local'. Without this the
