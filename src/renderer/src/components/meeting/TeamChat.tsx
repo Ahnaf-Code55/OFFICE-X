@@ -68,7 +68,10 @@ export function TeamChat() {
     return window.cth.onChatMessage((message) => setMessages((prev) => [...prev, message].slice(-100)));
   }, []);
 
-  useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight }); }, [messages, channel]);
+  // Follow new messages only while I'm at the bottom; scrolling up to read stays put.
+  const atBottom = useRef(true);
+  useEffect(() => { atBottom.current = true; }, [channel]);
+  useEffect(() => { if (atBottom.current) listRef.current?.scrollTo({ top: listRef.current.scrollHeight }); }, [messages, channel]);
 
   const attach = async (file: Blob | null | undefined) => {
     if (!file) return;
@@ -114,7 +117,7 @@ export function TeamChat() {
         <span style={{ color: 'var(--cth-ink-500)', fontSize: 11 }}>Leadership hears every channel, managers hear #Managers and #Everyone, employees hear #Everyone.</span>
       </div>}
     </div>
-    <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'grid', gap: 10, alignContent: 'start' }}>
+    <div ref={listRef} onScroll={(e) => { const el = e.currentTarget; atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }} style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'grid', gap: 10, alignContent: 'start' }}>
       {messages.filter((m) => m.channel === channel).map((m) => {
         const agent = m.authorKind === 'agent' ? byName.get(m.authorName) : undefined;
         return <div key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
