@@ -955,6 +955,8 @@ export class HiveManager {
     const args: string[] = [];
     if (!claudeProvider) return { args, env };
 
+    // Claude in Chrome is off unless asked for; agents (NICO etc.) need it to browse.
+    args.push('--chrome');
     args.push('--append-system-prompt', this.injectedPrompt(meta, dir, root, opts.semanticMemory ?? false, opts.knowledgeGraph ?? false, opts.kgCliPath));
 
     // Phase 1 — autonomy: attach lifecycle hooks via --settings (no edits to the
