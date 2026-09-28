@@ -27,6 +27,7 @@ const SHIPPED = {
   claude: [
     ["claude-fable-5-1", "Fable 5.1"],
     ["claude-fable-5", "Fable 5"],
+    ["claude-opus-5-5", "Opus 5.5"],
     ["claude-opus-5", "Opus 5 · 1M"],
     ["claude-opus-4-8", "Opus 4.8"],
     ["claude-opus-4-8[1m]", "Opus 4.8 · 1M"],
