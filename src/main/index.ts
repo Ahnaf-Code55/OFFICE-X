@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
+import { codexLimits, type UsageLimits } from '../shared/usageLimits';
 import { spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, cpSync, writeFileSync,
@@ -3602,6 +3603,32 @@ ipcMain.handle('hive:patchAgentRole', (_evt, id: unknown, role: unknown) => {
  *  release. Validated in shared/heroPayload before it reaches the renderer. */
 ipcMain.handle('hero:payload', async (_evt, force: unknown) =>
   loadHero(join(app.getPath('userData'), 'hero.json'), { force: force === true }));
+
+// ─── IPC: plan usage (floating usage box) ────────────────────────────────────
+/** Claude from the status-line shim; Codex from the tail of its newest session log. */
+function newestCodexRollout(): string | undefined {
+  let best: { path: string; mtime: number } | undefined;
+  const walk = (dir: string, depth: number): void => {
+    let names: string[] = [];
+    try { names = readdirSync(dir); } catch { return; }
+    for (const name of names) {
+      const path = join(dir, name);
+      let st; try { st = statSync(path); } catch { continue; }
+      if (st.isDirectory() && depth < 7) walk(path, depth + 1);
+      else if (name.endsWith('.jsonl') && (!best || st.mtimeMs > best.mtime)) best = { path, mtime: st.mtimeMs };
+    }
+  };
+  walk(join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'sessions'), 0);
+  return best?.path;
+}
+ipcMain.handle('usage:limits', () => {
+  let codex: UsageLimits | undefined;
+  const path = newestCodexRollout();
+  if (path) {
+    try { const text = readFileSync(path, 'utf8'); codex = codexLimits(text.slice(-200_000)); } catch { /* unreadable log */ }
+  }
+  return { claude: hookServer.claudeLimits, codex };
+});
 
 // ─── IPC: model catalog (remote data, cached) ───────────────────────────────
 /** The agent model presets, fetched from docs/model-catalog.json on main so a

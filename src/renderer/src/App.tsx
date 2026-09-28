@@ -32,6 +32,7 @@ import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
 import { IdePanel } from '@/ide/IdePanel';
 import { useHoldOptionToTalk } from '@/freeflow/holdOption';
 import { useChatAgentPrompts } from '@/components/meeting/TeamChat';
+import { UsageFloat } from '@/components/UsageFloat';
 import brandLogo from './assets/brand/officex-logo.svg?url';
 
 // Injected at build time from package.json (see electron.vite.config.ts).
@@ -280,6 +281,7 @@ export function App() {
       {/* rt-12: global fixed-overlay toast for voice-Michael completions ("Oscar
           finished X"). Self-positions bottom-right; renders null until one arrives. */}
       <CompletionToast />
+      <UsageFloat />
       {/* v0.3.4: background-update toast ("restart to update"); renders null until
           main's updater pushes a status. */}
       <UpdateToast />

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
+import type { UsageLimits } from '../shared/usageLimits';
 import type { ChatChannel, ChatTier, ChatView } from '../main/chat';
 import type { AgentProvider } from '../shared/agentProvider';
 import type { HireManifest } from '../shared/hire';
@@ -767,6 +768,7 @@ const api = {
   hiveLog: (n?: number): Promise<unknown[]> => ipcRenderer.invoke('hive:log', n ?? 200),
   hiveMemory: (id: string): Promise<string> => ipcRenderer.invoke('hive:memory', id),
   hiveMood: (id: string): Promise<string> => ipcRenderer.invoke('hive:mood', id),
+  usageLimits: (): Promise<{ claude?: UsageLimits; codex?: UsageLimits }> => ipcRenderer.invoke('usage:limits'),
   hiveInbox: (id: string): Promise<HiveMessage[]> => ipcRenderer.invoke('hive:inbox', id),
   /** Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED in
    *  main. Pass { id } for one message, { agentId } to scope to one mailbox, or

@@ -10,6 +10,7 @@
  *
  * Runs in the Electron main process.
  */
+import { claudeLimits, type UsageLimits } from '../shared/usageLimits';
 import { createServer, type Server } from 'node:net';
 import { existsSync, rmSync } from 'node:fs';
 import { Notification, type WebContents } from 'electron';
@@ -30,6 +31,8 @@ interface HookPayload {
   transcript_path?: string;
   /** Status-line payloads only: the session's live context accounting. */
   context_window?: { total_input_tokens?: number; context_window_size?: number };
+  /** Status-line payloads only: Claude plan usage (5h / weekly). */
+  rate_limits?: unknown;
   cwd?: string;
   tool_name?: string;
   tool_input?: unknown;
@@ -61,6 +64,8 @@ export class HookServer {
    *  we also retain the last value here so a main-side read (the voice read-layer's
    *  get_agent_detail / list_agents) can report "how full is each agent's context"
    *  without depending on a renderer round-trip. */
+  /** Latest Claude plan usage from any agent's status line. */
+  claudeLimits: UsageLimits | undefined;
   private contextById = new Map<string, { tokens: number; limit: number; ts: number }>();
   /** The goal last delivered to each agent's current session. Goals are durable
    *  roster state, so repeating an unchanged multi-kilobyte briefing on every
@@ -167,6 +172,7 @@ export class HookServer {
     // and telemetry should never write to the registry. transcript_path IS
     // still captured above, where every payload shape benefits from it.
     if (event === 'Status') {
+      this.claudeLimits = claudeLimits(p.rate_limits) ?? this.claudeLimits;
       const cw = p.context_window;
       if (agentId && cw && typeof cw.total_input_tokens === 'number'
         && typeof cw.context_window_size === 'number' && cw.context_window_size > 0) {
