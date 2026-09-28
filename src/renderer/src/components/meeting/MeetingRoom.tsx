@@ -210,7 +210,7 @@ export function MeetingRoom() {
   const [inMeeting, setInMeeting] = useState(false);
   if (inMeeting) return <Room onLeave={() => setInMeeting(false)} />;
   return <div style={{ flex: 1, display: 'grid', placeItems: 'center', alignContent: 'center', gap: 10, background: 'var(--cth-cream-50)', color: 'var(--cth-ink-500)', fontFamily: 'var(--cth-font-ui)', fontSize: 13, textAlign: 'center', padding: 16 }}>
-    <span>Talk with your teammates and AIs. Your speech is transcribed locally and replies are read aloud.</span>
+    <span>Talk with your teammates and AIs. Your speech is transcribed (Groq if you set a key, else locally) and replies are read aloud.</span>
     <PixelButton onClick={() => setInMeeting(true)}>join meeting</PixelButton>
   </div>;
 }

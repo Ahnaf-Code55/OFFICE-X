@@ -53,6 +53,7 @@ import { acceptIncomingTeamEnvelope } from './teamIngress';
 import { dispatchTeamAction } from './teamDispatch';
 import { transcribe } from './voice/stt';
 import { synthesize } from './voice/tts';
+import { pcm16kMonoToWav } from './voice/wav';
 import { onVoiceDownloadProgress } from './voice/assets';
 import { localModels, pullModel } from './ollama';
 import { CHAT_CHANNELS, createChat, type ChatChannel, type ChatTier } from './chat';
@@ -5074,7 +5075,13 @@ ipcMain.handle('meeting:setMic', (event, live: unknown) => {
 });
 ipcMain.handle('voice:transcribe', async (event, pcm: unknown) => {
   if (!isAppWindow(event) || !(pcm instanceof Uint8Array) || pcm.byteLength < 2 || pcm.byteLength > MAX_UTTERANCE_BYTES) return '';
-  const text = await transcribe(new Int16Array(new Uint8Array(pcm).buffer));
+  const samples = new Int16Array(new Uint8Array(pcm).buffer);
+  // Groq when a key is set (faster, better accuracy); local whisper.cpp otherwise or if Groq fails.
+  const cfg = readConfig();
+  const groq = cfg.groqApiKey
+    ? await transcribeWithGroq({ apiKey: cfg.groqApiKey, audio: pcm16kMonoToWav(samples), mimeType: 'audio/wav', filename: 'meeting.wav', model: cfg.freeflowModel || DEFAULT_GROQ_MODEL })
+    : undefined;
+  const text = groq?.ok ? groq.text ?? '' : await transcribe(samples);
   // Whisper marks silence/noise as [BLANK_AUDIO], (music), etc.
   return text.replace(/\[[^\]]*\]|\([^)]*\)/g, '').trim();
 });
