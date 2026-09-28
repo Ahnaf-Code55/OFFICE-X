@@ -28,3 +28,22 @@ export async function pullModel(input: string): Promise<{ ok: boolean; name?: st
     return { ok: false, error: e instanceof Error && e.name !== 'TimeoutError' ? 'Ollama is not running (start it with `ollama serve`)' : String(e) };
   }
 }
+
+export const LOCAL_CTX = 32768;
+
+/**
+ * Ollama's OpenAI endpoint runs every model at its small default context (2-4k) and
+ * silently truncates, so agent CLIs (OpenCode's prompt alone is ~10k) hit "session too
+ * large". Derive `<name>:ctx32k` with num_ctx raised (no weight copy); on failure use the original.
+ */
+export async function withBigContext(tag: string): Promise<string> {
+  if (tag.endsWith(':ctx32k')) return tag;
+  const derived = `${tag.split(':')[0]}:ctx32k`;
+  try {
+    const res = await fetch(`${OLLAMA}/api/create`, { method: 'POST', body: JSON.stringify({ model: derived, from: tag, parameters: { num_ctx: LOCAL_CTX }, stream: false }), signal: AbortSignal.timeout(30_000) });
+    const body = await res.json() as { error?: string };
+    return body.error ? tag : derived;
+  } catch {
+    return tag;
+  }
+}

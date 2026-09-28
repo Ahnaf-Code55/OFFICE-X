@@ -55,7 +55,7 @@ import { transcribe } from './voice/stt';
 import { synthesize } from './voice/tts';
 import { pcm16kMonoToWav } from './voice/wav';
 import { onVoiceDownloadProgress } from './voice/assets';
-import { localModels, pullModel } from './ollama';
+import { localModels, pullModel, withBigContext, LOCAL_CTX } from './ollama';
 import { CHAT_CHANNELS, createChat, type ChatChannel, type ChatTier } from './chat';
 import { MAX_CHAT_IMAGE_CHARS, MAX_CHAT_TEXT } from './teamActions';
 import {
@@ -3059,9 +3059,17 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         // so `--model local/<id>` resolves; default to 'local'. Without this the
         // dropdown's `local/llama3` failed against a config that only declared model
         // 'local' (Jim verify-opencode MUST-FIX #2).
-        const localModel = (prefix === 'local' && modelSlug.slice(6)) || 'local';
+        let localModel = (prefix === 'local' && modelSlug.slice(6)) || 'local';
+        // Ollama: run the model with a real context window and tell OpenCode its size,
+        // or it overflows the 2-4k default and loops on "session too large".
+        const ollama = !cfg.providerBaseUrls?.opencode && prefix === 'local';
+        if (ollama) {
+          localModel = await withBigContext(localModel);
+          opts.args = (opts.args ?? []).map((a, i) => (i === modelIdx + 1 ? `local/${localModel}` : a));
+        }
+        const limit = ollama ? { limit: { context: LOCAL_CTX, output: 8192 } } : {};
         oc.provider = {
-          local: { npm: '@ai-sdk/openai-compatible', name: 'Local (self-hosted)', options: { baseURL: baseUrl }, models: { [localModel]: { name: localModel } } }
+          local: { npm: '@ai-sdk/openai-compatible', name: 'Local (self-hosted)', options: { baseURL: baseUrl }, models: { [localModel]: { name: localModel, ...limit } } }
         };
       }
       extra.OPENCODE_CONFIG_CONTENT = JSON.stringify(oc);
