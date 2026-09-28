@@ -8,7 +8,7 @@ const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 const { parseTeamAction, MAX_CHAT_IMAGE_CHARS } = loadTs('src/main/teamActions.ts');
 const { isPeerActionAllowed, createTeamIdentity, sealTeamMessage, MAX_TEAM_MESSAGE_BYTES } = loadTs('src/shared/teamProtocol.ts');
-const { createChat, MAX_AI_TURNS } = loadTs('src/main/chat.ts');
+const { createChat, MAX_AI_TURNS, mentions } = loadTs('src/main/chat.ts');
 
 const member = { memberId: 'device-friend', displayName: 'Friend', controlLevel: 'task-requests' };
 const chatMessage = (body) => ({ id: 'm1', officeId: 'o', senderId: 'device-friend', recipientId: 'me', action: 'chat', body, issuedAt: 1, expiresAt: 2 });
@@ -83,4 +83,23 @@ test('every live agent hears #everyone by default until switched off', async () 
   chat.setTier('b', 'off');
   await chat.post('everyone', 'again', '');
   assert.deepEqual(delivered, ['a']);
+});
+
+test('an @mention reaches only the named agent and tells it to reply', async () => {
+  const kv = new Map();
+  const delivered = [];
+  const chat = createChat({
+    dir: fs.mkdtempSync(path.join(os.tmpdir(), 'chat-')),
+    getKv: (k) => kv.get(k), setKv: (k, v) => kv.set(k, v),
+    myName: () => 'Me', agentName: (id) => ({ a: 'Vanguard', b: 'Flux' })[id], agentIds: () => ['a', 'b'],
+    deliverToAgent: (id, _s, body) => delivered.push([id, body.includes('You were @mentioned')]),
+    sendToTeammates: async () => {}, emit: () => {}
+  });
+  await chat.post('everyone', 'yo @flux you dumbass 💀', '');
+  assert.deepEqual(delivered.splice(0), [['b', true]]);
+  await chat.post('everyone', 'morning all', '');
+  assert.deepEqual(delivered, [['a', false], ['b', false]]);
+  assert.equal(mentions('hi @Flux!', 'Flux'), true);
+  assert.equal(mentions('hi @Fluxy', 'Flux'), false);
+  assert.equal(mentions('mail flux@x.com', 'Flux'), false);
 });

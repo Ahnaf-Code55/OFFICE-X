@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/store/store';
 import { PixelButton } from '../PixelButton';
+import { getRemotePresence } from '@/scene/office/remotePresence';
 
 type ChatView = Awaited<ReturnType<typeof window.cth.listChat>>[number];
 type Channel = ChatView['channel'];
@@ -85,6 +86,11 @@ export function TeamChat() {
     void window.cth.setChatTier(id, tier);
   };
   const byName = new Map(agents.map((a) => [a.name, a]));
+  // @mention picker: my agents plus teammates' agents, filtered by what follows the '@'.
+  const partial = /@([\w-]*)$/.exec(text)?.[1];
+  const mentionable = [...new Set([...agents.map((a) => a.name), ...getRemotePresence().flatMap((p) => p.agents.map((a) => a.name))])];
+  const suggestions = partial === undefined ? [] : mentionable.filter((n) => n.toLowerCase().startsWith(partial.toLowerCase())).slice(0, 6);
+  const pickMention = (name: string) => setText(text.replace(/@[\w-]*$/, `@${name} `));
 
   return <section aria-label="Team chat" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--cth-cream-50)', color: 'var(--cth-ink-900)', fontFamily: 'var(--cth-font-ui)', fontSize: 13 }}>
     <div role="tablist" style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '2px solid var(--cth-ink-100)' }}>
@@ -120,7 +126,8 @@ export function TeamChat() {
               <strong style={{ color: 'var(--cth-ink-900)' }}>{m.authorKind === 'me' ? 'You' : m.authorName}</strong>
               {m.authorKind === 'agent' && ' · AI'} · {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
-            <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.text}</div>
+            <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.text.split(/(@[\w-]+)/).map((part, i) =>
+              i % 2 ? <strong key={i} style={{ color: 'var(--cth-sky)', background: 'var(--cth-sky-light)' }}>{part}</strong> : part)}</div>
             {m.image && <img src={m.image} alt="Shared screenshot" style={{ display: 'block', maxWidth: '100%', marginTop: 4, boxShadow: '0 0 0 1px var(--cth-ink-300)' }} />}
           </div>
         </div>;
@@ -130,13 +137,19 @@ export function TeamChat() {
       <img src={image} alt="Screenshot to send" style={{ height: 40 }} />
       <button type="button" onClick={() => setImage('')} style={{ background: 'none', border: 0, color: 'var(--cth-coral)', cursor: 'pointer' }}>remove</button>
     </div>}
+    {suggestions.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '4px 8px' }}>
+      {suggestions.map((name) => <PixelButton key={name} size="sm" variant="secondary" onClick={() => pickMention(name)}>@{name}</PixelButton>)}
+    </div>}
     {error && <div role="alert" style={{ padding: '4px 10px', color: 'var(--cth-coral)' }}>{error}</div>}
     <div style={{ display: 'flex', gap: 6, padding: 8, borderTop: '2px solid var(--cth-ink-100)' }}>
       <PixelButton variant="secondary" size="sm" onClick={() => fileRef.current?.click()} title="Attach screenshot">+</PixelButton>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden
         onChange={(e) => { void attach(e.target.files?.[0]); e.target.value = ''; }} />
       <input value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} placeholder={`Message #${channel}`}
-        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
+        onKeyDown={(e) => {
+          if ((e.key === 'Tab' || e.key === 'Enter') && suggestions.length) { e.preventDefault(); pickMention(suggestions[0]); }
+          else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
+        }}
         onPaste={(e) => { const file = [...e.clipboardData.files].find((f) => f.type.startsWith('image/')); if (file) { e.preventDefault(); void attach(file); } }}
         style={{ ...field, flex: 1, minWidth: 0, padding: '6px 8px' }} />
       <PixelButton size="sm" onClick={() => void send()}>send</PixelButton>

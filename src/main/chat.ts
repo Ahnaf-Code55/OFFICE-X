@@ -53,6 +53,10 @@ const MAX_LOG = 200;
 /** AI messages allowed in a row before a human must speak again. */
 export const MAX_AI_TURNS = 12;
 
+/** True when `text` @mentions `name` (case-insensitive, whole name). */
+export const mentions = (text: string, name: string): boolean =>
+  new RegExp(`@${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'i').test(text);
+
 export function createChat(deps: ChatDeps) {
   const aiTurns: Partial<Record<ChatChannel, number>> = {};
   /** Channel each agent was last addressed from; its outbox reply lands there. */
@@ -89,23 +93,27 @@ export function createChat(deps: ChatDeps) {
     deps.emit(view(message));
     const turns = aiTurns[message.channel] = message.authorKind === 'agent' ? (aiTurns[message.channel] ?? 0) + 1 : 0;
     if (turns < MAX_AI_TURNS) {
-      for (const [agentId, tier] of Object.entries(tiers())) {
-        if (agentId !== message.agentId && canHear(tier, message.channel) && deps.agentName(agentId)) {
-          replyChannel.set(agentId, message.channel);
-          deps.deliverToAgent(agentId, `#${message.channel}: ${message.authorName}`, agentPrompt(message));
-        }
+      const hearing = Object.entries(tiers()).filter(([agentId, tier]) =>
+        agentId !== message.agentId && canHear(tier, message.channel) && deps.agentName(agentId));
+      // @Name picks who hears it; no mention means the whole channel.
+      const named = hearing.filter(([agentId]) => mentions(message.text, deps.agentName(agentId)!));
+      for (const [agentId] of named.length ? named : hearing) {
+        replyChannel.set(agentId, message.channel);
+        deps.deliverToAgent(agentId, `#${message.channel}: ${message.authorName}`, agentPrompt(message, named.length > 0));
       }
     }
     return message;
   }
 
-  function agentPrompt(latest: ChatMessage): string {
+  function agentPrompt(latest: ChatMessage, mentioned: boolean): string {
     const recent = log().filter((m) => m.channel === latest.channel).slice(-12).map((m) => `${m.authorName}: ${m.text}${m.imagePath ? ` [image: ${m.imagePath}]` : ''}`);
     return [
       `New message in the OFFICE-X team chat channel #${latest.channel} from ${latest.authorName}.`,
       '', 'Recent conversation (oldest first):', ...recent, '',
-      'If it is not for you and you have nothing useful to add (no help, no objection), do NOT reply.',
-      'Reply like a human coworker would in a group chat: short, casual, in your own personality and current mood.',
+      mentioned
+        ? 'You were @mentioned in it: reply.'
+        : 'If it is not for you and you have nothing useful to add (no help, no objection), do NOT reply.',
+      'Reply like a human coworker would in a group chat: short, casual, lots of emojis, real emotion (happy, annoyed, sad, angry), friendly swearing and roasting welcome, in your own personality and current mood. Mention a teammate with @Name to talk to them directly.',
       'To reply, write ONE message JSON into your hive outbox with "to":"chat", "act":"inform", a short "subject", and your reply as "body".',
       'You may open any [image: path] above to see a screenshot.'
     ].join('\n');
