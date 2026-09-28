@@ -80,6 +80,8 @@ interface Runtime {
   run?: CoffeeRun;
   /** When the current busy stretch (working/thinking/compacting) began. */
   busySince?: number;
+  /** At the office party in a meeting room. */
+  party?: boolean;
 }
 
 /** A guest avatar is presentation only. It intentionally has no Agent, store
@@ -89,6 +91,7 @@ interface RemoteRuntime {
   label: Text;
   seatIndex: number;
   status: string;
+  party?: boolean;
 }
 
 /** Only a busy stretch at least this long earns a cheer on finishing. Short
@@ -789,7 +792,7 @@ export function OfficeFloor() {
       };
 
       const breakEligible = (agent: Agent, rt: Runtime): boolean => {
-        if (agent.isGod || rt.brk || rt.err || rt.run || rt.cupCarryHome) return false;
+        if (agent.isGod || rt.brk || rt.err || rt.run || rt.cupCarryHome || rt.party) return false;
         if (agent.status !== 'idle' && agent.status !== 'success') return false;
         return !rt.character.isSitting();   // already parked at a desk → leave it
       };
@@ -963,7 +966,7 @@ export function OfficeFloor() {
         if (spot.godOnly) {
           const god = useStore.getState().agents.find((a) => a.isGod);
           const grt = god ? runtimes.get(god.id) : undefined;
-          if (!god || !grt || grt.err || grt.brk
+          if (!god || !grt || grt.err || grt.brk || grt.party
             || (god.status !== 'idle' && god.status !== 'success')
             || Math.random() >= 0.5) return;        // the boss is unhurried
           agent = god; rt = grt;
@@ -996,6 +999,72 @@ export function OfficeFloor() {
           if (spot.kind === 'water') c.startWatering(spot.duration, finish);
           else if (spot.kind === 'smoke') c.startSmoking(spot.duration, finish);
         });
+      };
+
+      // ─── Office party: all work finished → everyone meets to celebrate ─────
+      // When every agent, mine and my teammates' guests, is done after a real
+      // busy stretch, the whole floor walks into the meeting rooms and cheers.
+      const PARTY_SECONDS = 45;
+      const partyTiles: Tile[] = ['meeting-room-a', 'meeting-room-b', 'boardroom'].flatMap((name) => {
+        const z = mapRenderer.getZone(name);
+        const out: Tile[] = [];
+        if (z) for (let y = z.y; y < z.y + z.height; y++) for (let x = z.x; x < z.x + z.width; x++) {
+          if (mapRenderer.isWalkable(x, y)) out.push({ x, y });
+        }
+        return out;
+      }).sort(() => Math.random() - 0.5);
+      let officeBusySince: number | undefined;
+      let partyLeft = 0;
+      const joinParty = (c: Character, tile: Tile): void => {
+        c.setIdle();
+        c.walkToAndThen(tile, () => {
+          c.cheer();
+          c.showThought(t(CHEER_KEYS[Math.floor(Math.random() * CHEER_KEYS.length)]));
+        });
+      };
+      const startParty = (): void => {
+        let i = 0;
+        for (const rt of runtimes.values()) {
+          if (rt.run || rt.cupCarryHome) continue; // mid coffee run with a mug in hand
+          releaseBreak(rt);
+          releaseErrand(rt);
+          rt.party = true;
+          joinParty(rt.character, partyTiles[i++ % partyTiles.length]);
+        }
+        for (const remote of remoteRuntimes.values()) {
+          remote.party = true;
+          joinParty(remote.character, partyTiles[i++ % partyTiles.length]);
+        }
+        partyLeft = PARTY_SECONDS;
+      };
+      const endParty = (): void => {
+        const agents = useStore.getState().agents;
+        for (const [id, rt] of runtimes) {
+          if (!rt.party) continue;
+          rt.party = false;
+          rt.character.hideThought();
+          const agent = agents.find((a) => a.id === id);
+          if (agent) applyState(agent, rt, true);
+        }
+        for (const remote of remoteRuntimes.values()) {
+          if (!remote.party) continue;
+          remote.party = false;
+          remote.character.hideThought();
+          remote.character.sitAtDesk(remote.status === 'working');
+        }
+      };
+      const updateParty = (dt: number): void => {
+        if (partyLeft > 0) {
+          partyLeft -= dt;
+          if (partyLeft <= 0) endParty();
+          return;
+        }
+        const done = useStore.getState().agents.every((a) => a.status === 'idle' || a.status === 'success' || a.status === 'ghost')
+          && getRemotePresence().every((p) => p.agents.every((a) => a.status === 'idle' || a.status === 'offline'));
+        if (!done) { officeBusySince ??= Date.now(); return; }
+        const earned = officeBusySince !== undefined && Date.now() - officeBusySince >= CHEER_MIN_BUSY_MS;
+        officeBusySince = undefined;
+        if (earned && partyTiles.length > 0) startParty();
       };
 
       // ─── The boss aura: performative excellence in Michael's presence ──────
@@ -1548,6 +1617,12 @@ export function OfficeFloor() {
           }
           releaseBreak(rt);
         }
+        // At the office party: idle refreshes keep it there; real work sends it back.
+        if (rt.party) {
+          if (agent.status === 'idle' || agent.status === 'success') return;
+          rt.party = false;
+          c.hideThought();
+        }
         // Same for an idle errand (watering, window, fridge…): idle refreshes
         // leave it alone, real work cancels it and the agent heads to its desk.
         if (rt.err) {
@@ -1701,6 +1776,8 @@ export function OfficeFloor() {
       const applyRemoteState = (agent: RemotePresenceAgent, remote: RemoteRuntime) => {
         if (remote.status === agent.status) return;
         remote.status = agent.status;
+        if (remote.party && agent.status === 'idle') return;
+        remote.party = false;
         const c = remote.character;
         c.setBaseAlpha(agent.status === 'offline' ? 0.45 : 1);
         c.setStatusGlyph('none');
@@ -1924,6 +2001,7 @@ export function OfficeFloor() {
         updateCafeteria(dt);
         updateCoffeeRuns(dt);
         updateErrands(dt);
+        updateParty(dt);
         updateBossAura(dt);
         updateDeskLife(dt);
         updateBoardMoves(dt);
