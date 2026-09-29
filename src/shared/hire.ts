@@ -41,7 +41,7 @@ export const BUNDLED_SKILL_IDS: ReadonlySet<string> = new Set([
 /** Providers a manifest may request ('agy' is accepted as an alias for
  *  'antigravity'). 'custom' is deliberately NOT allowed — it would let a
  *  manifest choose an arbitrary local binary. */
-export type HireProvider = 'claude' | 'antigravity' | 'codex' | 'cursor';
+export type HireProvider = 'claude' | 'antigravity' | 'codex' | 'cursor' | 'opencode';
 
 export interface HireManifest {
   /** Spec tag; new manifests use OFFICE-X, while the upstream v1 tag stays importable. */
@@ -94,7 +94,7 @@ export interface HireValidation {
   consentRequired?: string[];
 }
 
-const PROVIDERS: readonly string[] = ['claude', 'antigravity', 'codex', 'cursor'];
+const PROVIDERS: readonly string[] = ['claude', 'antigravity', 'codex', 'cursor', 'opencode'];
 const MAX_BYTES = 64 * 1024;
 
 /** A flag ("-x", "--flag", "--flag=value") or a bare value token that may follow
