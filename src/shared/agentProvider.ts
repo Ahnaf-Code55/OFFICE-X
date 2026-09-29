@@ -64,6 +64,9 @@ export interface AgentProviderPreset {
   label: string;
   /** The binary spawned when the user hasn't typed a custom command. */
   defaultCommand: string;
+  /** Optional interactive subcommand, used when the CLI exposes model flags only
+   *  on its minimal TUI command (for example `opencode mini`). */
+  commandSubcommand?: string;
   /** Slash / CLI command reference for this provider. */
   commandGroups: CmdGroup[];
   /** Environment variable to set for non-interactive / first-run suppression. */
@@ -349,11 +352,12 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
   },
   {
     // OpenCode — the TypeScript AI coding agent (opencode.ai / anomalyco/opencode,
-    // ex sst/opencode). NOT the archived Go opencode-ai/opencode (→ Crush). Run as
-    // its interactive TUI in a PTY (like codex), oriented by --prompt.
+    // ex sst/opencode). NOT the archived Go opencode-ai/opencode (→ Crush). Its
+    // minimal interactive TUI (`mini`) accepts --model and --prompt in a PTY.
     id: 'opencode',
     label: 'OpenCode',
     defaultCommand: 'opencode',
+    commandSubcommand: 'mini',
     commandGroups: [],
     // OpenCode's TUI exposes no skip-permissions FLAG; headless auto-approve is a
     // config concern (permission:allow). To keep auto-mode gated behind the floor
@@ -379,7 +383,7 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // injection) is UNVERIFIED pending BYOK keys / a local LLM. The renderer idle
     // inbox-wake nudge (useHive.ts) is the guaranteed fallback so a god still drains.
     canReceiveInbox: true,
-    initialPromptFlag: '--prompt', // opencode --prompt "<orchestrator/worker brief>"
+    initialPromptFlag: '--prompt', // opencode mini --prompt "<orchestrator/worker brief>"
     // NO recommended model — deliberately. This used to preselect
     // `anthropic/claude-sonnet-4-5` under the comment "OpenCode's own default",
     // which was wrong on both halves: it is not OpenCode's default, and it is a

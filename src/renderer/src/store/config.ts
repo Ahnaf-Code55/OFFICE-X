@@ -420,7 +420,7 @@ export function buildSpawnCommand(
       : provider === 'custom'
         ? config.defaultCommand || ''
         : preset.defaultCommand;
-  let cmd = base;
+  let cmd = preset.commandSubcommand ? `${base} ${preset.commandSubcommand}` : base;
   if (preset.supportsModel && model && preset.modelFlag) {
     // Quote model values that contain whitespace (agy labels like
     // "Gemini 3.1 Pro (High)") so the command tokenizer keeps them one arg.
