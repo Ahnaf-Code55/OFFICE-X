@@ -213,8 +213,8 @@ export type { CatalogModel, ModelCatalog } from '@shared/modelCatalogPayload';
  *  - qwen: qwen-code (`qwen`), the proxy-bridge CLI driving an OpenAI-compatible
  *    endpoint. Starting suggestions only. // TODO-verify the live list.
  *  - opencode: `--model` takes a `provider/model` slug; curated BYOK suggestions
- *    (`opencode models` / models.dev is the source of truth). `CLI default` is the
- *    PRESELECTED entry, because a BYOK slug the user holds no key for fails
+ *    (`opencode models` / models.dev) plus OpenCode Go models (`opencode-go/<id>`).
+ *    `CLI default` is the PRESELECTED entry, because a BYOK slug the user holds no key for fails
  *    silently — see the recommendedOrchestratorModel note in agentProvider.ts.
  *    // TODO-verify exact live slugs (they drift).
  *  - crush: `--model` takes a `provider/model-id` slug; free-text editable (Crush
