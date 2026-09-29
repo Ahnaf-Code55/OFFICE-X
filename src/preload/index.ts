@@ -768,7 +768,7 @@ const api = {
   hiveLog: (n?: number): Promise<unknown[]> => ipcRenderer.invoke('hive:log', n ?? 200),
   hiveMemory: (id: string): Promise<string> => ipcRenderer.invoke('hive:memory', id),
   hiveMood: (id: string): Promise<string> => ipcRenderer.invoke('hive:mood', id),
-  usageLimits: (): Promise<{ claude?: UsageLimits; codex?: UsageLimits }> => ipcRenderer.invoke('usage:limits'),
+  usageLimits: (): Promise<{ claude?: UsageLimits; codex?: UsageLimits; opencode?: UsageLimits }> => ipcRenderer.invoke('usage:limits'),
   hiveInbox: (id: string): Promise<HiveMessage[]> => ipcRenderer.invoke('hive:inbox', id),
   /** Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED in
    *  main. Pass { id } for one message, { agentId } to scope to one mailbox, or

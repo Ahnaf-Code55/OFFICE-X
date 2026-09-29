@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { UsageLimits, UsageWindow } from '../../../shared/usageLimits';
 
-type Limits = { claude?: UsageLimits; codex?: UsageLimits };
+type Limits = { claude?: UsageLimits; codex?: UsageLimits; opencode?: UsageLimits };
 
 const until = (sec: number): string => {
   const m = Math.max(0, Math.round((sec * 1000 - Date.now()) / 60000));
@@ -18,7 +18,7 @@ function Bar({ label, w }: { label: string; w?: UsageWindow }) {
   </div>;
 }
 
-/** Floating Claude / Codex plan usage (5h + weekly), always on top of the office. Click the title to fold it. */
+/** Floating Claude / Codex / OpenCode Go plan usage, always on top of the office. Click the title to fold it. */
 export function UsageFloat() {
   const [limits, setLimits] = useState<Limits>({});
   const [open, setOpen] = useState(true);
@@ -29,7 +29,7 @@ export function UsageFloat() {
     const iv = setInterval(poll, 30_000);
     return () => clearInterval(iv);
   }, []);
-  const rows = ([['Claude', limits.claude], ['Codex', limits.codex]] as const).filter(([, l]) => l);
+  const rows = ([['Claude', limits.claude], ['Codex', limits.codex], ['OpenCode Go', limits.opencode]] as const).filter(([, l]) => l);
   return <div style={{
     position: 'fixed', left: 12, bottom: 12, zIndex: 60, width: 210, padding: '6px 8px', display: 'grid', gap: 6,
     fontFamily: 'var(--cth-font-mono)', fontSize: 11, background: 'var(--cth-cream-50)', color: 'var(--cth-ink-900)',

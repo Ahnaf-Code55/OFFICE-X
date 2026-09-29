@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { codexLimits, type UsageLimits } from '../shared/usageLimits';
+import { fetchOpenCodeGoLimits } from './openCodeUsage';
 import { spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, cpSync, writeFileSync,
@@ -3646,13 +3647,14 @@ function newestCodexRollout(): string | undefined {
   walk(join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'sessions'), 0);
   return best?.path;
 }
-ipcMain.handle('usage:limits', () => {
+ipcMain.handle('usage:limits', async () => {
   let codex: UsageLimits | undefined;
   const path = newestCodexRollout();
   if (path) {
     try { const text = readFileSync(path, 'utf8'); codex = codexLimits(text.slice(-200_000)); } catch { /* unreadable log */ }
   }
-  return { claude: hookServer.claudeLimits, codex };
+  const opencode = await fetchOpenCodeGoLimits();
+  return { claude: hookServer.claudeLimits, codex, opencode };
 });
 
 // ─── IPC: model catalog (remote data, cached) ───────────────────────────────
