@@ -2697,6 +2697,14 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   const claudeProvider = isClaudeProvider(provider);
   opts.provider = provider;
   if (opts.hive) opts.hive = { ...opts.hive, provider };
+  // Existing agents persist their complete command line. OpenCode Go hires
+  // created before the `mini` launch fix therefore still arrive as
+  // `opencode --model ...`, which the root CLI rejects. Repair argv at the
+  // single spawn boundary so restores, restarts, and already-saved hires all
+  // receive the interactive subcommand without requiring users to re-import.
+  if (provider === 'opencode' && opts.args?.[0] !== 'mini') {
+    opts.args = ['mini', ...(opts.args ?? [])];
+  }
   // Activation-funnel entry (v0.4.6): every spawn REQUEST, so (attempted − spawned)
   // measures the fallout the whole rebuild exists to see. Gated on !noAutoInstall so
   // the missing-CLI relaunch (the only re-entry, index.ts install-exit handler) does
