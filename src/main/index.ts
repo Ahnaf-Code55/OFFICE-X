@@ -95,6 +95,7 @@ import { ClosingTimeController } from './closingTime';
 import {
   argsWithAutoModeFlag,
   inferAgentProvider,
+  canonicalModelForProvider,
   isClaudeProvider,
   nonInteractiveEnvForProvider,
   providerPreset,
@@ -2704,6 +2705,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // receive the interactive subcommand without requiring users to re-import.
   if (provider === 'opencode' && opts.args?.[0] !== 'mini') {
     opts.args = ['mini', ...(opts.args ?? [])];
+  }
+  if (provider === 'opencode' && opts.args) {
+    opts.args = opts.args.map((arg) => canonicalModelForProvider(provider, arg));
   }
   // Activation-funnel entry (v0.4.6): every spawn REQUEST, so (attempted − spawned)
   // measures the fallout the whole rebuild exists to see. Gated on !noAutoInstall so

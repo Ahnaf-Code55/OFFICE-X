@@ -4,6 +4,7 @@ import {
   AGENT_PROVIDER_PRESETS,
   providerPreset,
   inferAgentProvider,
+  canonicalModelForProvider,
   isClaudeProvider,
   type AgentProvider,
   type AgentProviderPreset
@@ -424,7 +425,8 @@ export function buildSpawnCommand(
   if (preset.supportsModel && model && preset.modelFlag) {
     // Quote model values that contain whitespace (agy labels like
     // "Gemini 3.1 Pro (High)") so the command tokenizer keeps them one arg.
-    const m = /\s/.test(model) ? `"${model}"` : model;
+    const canonicalModel = canonicalModelForProvider(provider, model);
+    const m = /\s/.test(canonicalModel) ? `"${canonicalModel}"` : canonicalModel;
     cmd = `${cmd} ${preset.modelFlag} ${m}`;
   }
   // Auto (skip-permissions) mode appends each provider's own flag — Claude's

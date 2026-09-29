@@ -170,6 +170,15 @@ export interface AgentProviderPreset {
   resumeSubcommand?: string; // CLIs that resume via a subcommand instead of a flag (Codex: `codex resume [OPTIONS] [SESSION_ID]`)
 }
 
+/** Migrate retired model slugs saved in hire files or agent rosters. OpenCode Go
+ *  renamed DeepSeek Flash; keep old saved agents launchable across that change. */
+export function canonicalModelForProvider(provider: AgentProvider, model: string): string {
+  if (provider === 'opencode' && model === 'opencode-go/deepseek-flash') {
+    return 'opencode-go/deepseek-v4-flash';
+  }
+  return model;
+}
+
 export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
   {
     id: 'claude',

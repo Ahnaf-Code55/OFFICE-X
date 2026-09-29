@@ -4,7 +4,7 @@
   "description": "General Utility Worker — handles small fixes, migrations, scripts, and repeatable support tasks.",
   "goal": "Complete small, clearly scoped utility tasks assigned by Nexus or the relevant lead: routine fixes, data migrations, scripts, and repeatable maintenance. Follow repository conventions, preserve user data, inspect before editing, and avoid expanding scope. Report changed files, commands run, and any remaining manual step.",
   "provider": "opencode",
-  "model": "opencode-go/deepseek-flash",
+  "model": "opencode-go/deepseek-v4-flash",
   "character": "toby",
   "accent": "peach",
   "author": "OQVIAN"
