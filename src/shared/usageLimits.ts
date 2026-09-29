@@ -43,7 +43,10 @@ export function openCodeGoLimits(payload: unknown): UsageLimits | undefined {
   const parseWindow = (value: unknown): UsageWindow | undefined => {
     if (!value || typeof value !== 'object') return undefined;
     const w = value as Record<string, unknown>;
-    if (w.status && w.status !== 'ok') return undefined;
+    // The Go endpoint marks exhausted windows `rate-limited`; percent and reset
+    // time remain valid, and hiding that window would conceal the limit users
+    // most need to see.
+    if (w.status && w.status !== 'ok' && w.status !== 'rate-limited') return undefined;
     if (typeof w.percent !== 'number' || !Number.isFinite(w.percent)) return undefined;
     const resetMs = typeof w.resetsAt === 'string'
       ? Date.parse(w.resetsAt)
