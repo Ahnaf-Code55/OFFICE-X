@@ -64,9 +64,10 @@ export interface AgentProviderPreset {
   label: string;
   /** The binary spawned when the user hasn't typed a custom command. */
   defaultCommand: string;
-  /** Optional interactive subcommand, used when the CLI exposes model flags only
-   *  on its minimal TUI command (for example `opencode mini`). */
-  commandSubcommand?: string;
+  /** Optional flag always passed right after the binary, e.g. OpenCode's
+   *  `--mini` (its minimal TUI is a FLAG; `opencode mini` would be read as a
+   *  project path and exit with "Failed to change directory"). */
+  launchFlag?: string;
   /** Slash / CLI command reference for this provider. */
   commandGroups: CmdGroup[];
   /** Environment variable to set for non-interactive / first-run suppression. */
@@ -362,11 +363,11 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
   {
     // OpenCode — the TypeScript AI coding agent (opencode.ai / anomalyco/opencode,
     // ex sst/opencode). NOT the archived Go opencode-ai/opencode (→ Crush). Its
-    // minimal interactive TUI (`mini`) accepts --model and --prompt in a PTY.
+    // minimal interactive TUI (`--mini`) accepts --model and --prompt in a PTY.
     id: 'opencode',
     label: 'OpenCode',
     defaultCommand: 'opencode',
-    commandSubcommand: 'mini',
+    launchFlag: '--mini',
     commandGroups: [],
     // OpenCode's TUI exposes no skip-permissions FLAG; headless auto-approve is a
     // config concern (permission:allow). To keep auto-mode gated behind the floor
@@ -392,7 +393,7 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // injection) is UNVERIFIED pending BYOK keys / a local LLM. The renderer idle
     // inbox-wake nudge (useHive.ts) is the guaranteed fallback so a god still drains.
     canReceiveInbox: true,
-    initialPromptFlag: '--prompt', // opencode mini --prompt "<orchestrator/worker brief>"
+    initialPromptFlag: '--prompt', // opencode --mini --prompt "<orchestrator/worker brief>"
     // NO recommended model — deliberately. This used to preselect
     // `anthropic/claude-sonnet-4-5` under the comment "OpenCode's own default",
     // which was wrong on both halves: it is not OpenCode's default, and it is a
@@ -748,4 +749,15 @@ export function installInfoForProvider(
     label: p.label,
     docsUrl: p.docsUrl
   };
+}
+
+/**
+ * OpenCode argv repair at the spawn boundary. Saved agents and hires may carry
+ * the old `mini` SUBCOMMAND (`opencode mini --model …`), which OpenCode reads as
+ * a project path and exits on; turn it into the `--mini` flag, and add the flag
+ * to argv saved before the minimal TUI was the default.
+ */
+export function withOpenCodeMiniArgs(args: readonly string[]): string[] {
+  const rest = args[0] === 'mini' ? args.slice(1) : [...args];
+  return rest.includes('--mini') ? rest : ['--mini', ...rest];
 }

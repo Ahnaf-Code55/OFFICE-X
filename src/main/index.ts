@@ -101,6 +101,7 @@ import {
   nonInteractiveEnvForProvider,
   providerPreset,
   installInfoForProvider,
+  withOpenCodeMiniArgs,
   type AgentProvider
 } from '../shared/agentProvider';
 import { buildMissingCliScript, chooseInstallRung } from './cliInstall';
@@ -2700,14 +2701,11 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   const claudeProvider = isClaudeProvider(provider);
   opts.provider = provider;
   if (opts.hive) opts.hive = { ...opts.hive, provider };
-  // Existing agents persist their complete command line. OpenCode Go hires
-  // created before the `mini` launch fix therefore still arrive as
-  // `opencode --model ...`, which the root CLI rejects. Repair argv at the
-  // single spawn boundary so restores, restarts, and already-saved hires all
-  // receive the interactive subcommand without requiring users to re-import.
-  if (provider === 'opencode' && opts.args?.[0] !== 'mini') {
-    opts.args = ['mini', ...(opts.args ?? [])];
-  }
+  // Existing agents persist their complete command line, so saved OpenCode
+  // agents may still say `opencode mini ...` (exits: "mini" is read as a project
+  // path) or lack the flag. Repair argv at the single spawn boundary so restores,
+  // restarts, and already-saved hires all launch `opencode --mini ...`.
+  if (provider === 'opencode') opts.args = withOpenCodeMiniArgs(opts.args ?? []);
   if (provider === 'opencode' && opts.args) {
     opts.args = opts.args.map((arg) => canonicalModelForProvider(provider, arg));
   }
