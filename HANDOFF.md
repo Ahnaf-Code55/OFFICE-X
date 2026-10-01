@@ -1,6 +1,6 @@
 # OFFICE-X handoff
 
-Updated: 2026-09-27 (Asia/Kuala_Lumpur)
+Updated: 2026-10-01
 
 ## Goal
 Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring and control their own AI agents, with reciprocal trust and owner controlled permissions.
@@ -25,6 +25,9 @@ Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring 
 - Keyring fixed 2026-09-27: gnome-keyring installed, `org.freedesktop.secrets` store/lookup verified. App-level identity creation still unchecked.
 - Temp relay up 2026-09-27 (Node 26, persistent key `~/.local/share/officex-relay/relay.key`) behind a Cloudflare quick tunnel; external libp2p WSS dial passed. Address (dies when tunnel restarts): `/dns4/reducing-caribbean-posters-murray.trycloudflare.com/tcp/443/wss/p2p/12D3KooWSzm9JMyup878piqT7dKeRSqoxpTgU3e7c2YzD9uzcVMY`. Needs a VPS/named tunnel for permanence; relay officially wants Node 22.
 - Two-computer invitation, control, output sharing, and revocation acceptance with the friend's Bazzite device remain unverified.
+
+- 2026-10-01: remote `chat` from task-requests teammates no longer reaches local agents (`src/main/chat.ts`, `index.ts`; test in `test/team-chat.test.cjs`); voice download progress no longer double-emits (`voice/assets.ts`); stale `opencode-go/deepseek-flash` removed from `docs/model-catalog.json`. Focused suite 933/936: `proc-kill` fails only in containers without a zombie-reaping PID 1.
+- Still missing from PLAN.md: human-to-human WebRTC (`rtc-signal`), image attach in MeetingRoom, per-AI voices, Phase 5 review notes.
 
 ## NEXT TASK
 Enter the relay address in Shared Office → Self-hosted on both devices, then run reciprocal invite and cross-device control acceptance with the Bazzite teammate and fix any observed failure.

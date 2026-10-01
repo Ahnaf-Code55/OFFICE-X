@@ -76,7 +76,6 @@ const SHIPPED = {
     ["opencode-go/glm-5", "OpenCode Go · GLM 5"],
     ["opencode-go/deepseek-v4-pro", "OpenCode Go · DeepSeek V4 Pro"],
     ["opencode-go/deepseek-v4-flash", "OpenCode Go · DeepSeek V4 Flash"],
-    ["opencode-go/deepseek-flash", "OpenCode Go · DeepSeek Flash"],
     ["opencode-go/deepseek-v4.1-flash", "OpenCode Go · DeepSeek V4.1 Flash"],
     ["opencode-go/deepseek-v4-flash-vision-exp", "OpenCode Go · DeepSeek V4 Flash Vision (Experimental)"],
     ["opencode-go/qwen3.7-max", "OpenCode Go · Qwen 3.7 Max"],

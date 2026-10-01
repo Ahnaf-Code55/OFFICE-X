@@ -87,14 +87,15 @@ export function createChat(deps: ChatDeps) {
     return path;
   }
 
-  function record(input: Omit<ChatMessage, 'id' | 'ts' | 'imagePath'> & { image?: string }): ChatMessage {
+  /** `promptAgents: false` shows the message to the owner without typing it into any local agent. */
+  function record(input: Omit<ChatMessage, 'id' | 'ts' | 'imagePath'> & { image?: string }, promptAgents = true): ChatMessage {
     const id = randomBytes(8).toString('hex');
     const { image, ...rest } = input;
     const message: ChatMessage = { ...rest, id, ts: Date.now(), imagePath: image ? saveImage(id, image) : undefined };
     deps.setKv(LOG_KEY, [...log(), message].slice(-MAX_LOG));
     deps.emit({ ...view(message), mentionsMe: message.authorKind !== 'me' && mentions(message.text, myHandle()) });
     const turns = aiTurns[message.channel] = message.authorKind === 'agent' ? (aiTurns[message.channel] ?? 0) + 1 : 0;
-    if (turns < MAX_AI_TURNS) {
+    if (promptAgents && turns < MAX_AI_TURNS) {
       const hearing = Object.entries(tiers()).filter(([agentId, tier]) =>
         agentId !== message.agentId && canHear(tier, message.channel) && deps.agentName(agentId));
       // @Name picks who hears it; no mention means the whole channel.
@@ -135,10 +136,14 @@ export function createChat(deps: ChatDeps) {
       return message;
     },
 
-    /** A pinned teammate (or one of their AIs) posted. */
-    receiveRemote(input: { memberName: string; channel: ChatChannel; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string }): void {
+    /**
+     * A pinned teammate (or one of their AIs) posted. Only teammates allowed to
+     * prompt agents (`canPromptAgents`) reach local AIs; task-request teammates
+     * are shown to the owner but never typed into an agent.
+     */
+    receiveRemote(input: { memberName: string; canPromptAgents: boolean; channel: ChatChannel; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string }): void {
       const authorName = input.authorKind === 'human' ? input.memberName : `${input.authorName} (${input.memberName})`;
-      record({ authorKind: input.authorKind, authorName, channel: input.channel, text: input.text, image: input.image || undefined });
+      record({ authorKind: input.authorKind, authorName, channel: input.channel, text: input.text, image: input.image || undefined }, input.canPromptAgents);
     },
 
     /** One of my local AI agents replied via its outbox. */

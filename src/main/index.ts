@@ -49,7 +49,7 @@ import {
   type OrgConnectionMode, type PeerControlLevel,
   type TriggerHistoryEntry, type TriggerMode, type WebhookTrigger
 } from '../shared/triggers';
-import { isTeamDeviceId, sealTeamMessage, type TeamMessage } from '../shared/teamProtocol';
+import { isPeerActionAllowed, isTeamDeviceId, sealTeamMessage, type TeamMessage } from '../shared/teamProtocol';
 import { acceptIncomingTeamEnvelope } from './teamIngress';
 import { dispatchTeamAction } from './teamDispatch';
 import { transcribe } from './voice/stt';
@@ -4557,7 +4557,8 @@ function dispatchTeamMessage(message: TeamMessage, peerId: string): void {
         if (!win.isDestroyed()) win.webContents.send('org:terminalOutput', payload);
       }
     },
-    receiveChat: (command) => chat.receiveRemote({ memberName: member.displayName, channel: command.channel, text: command.text, image: command.image,
+    receiveChat: (command) => chat.receiveRemote({ memberName: member.displayName,
+      canPromptAgents: isPeerActionAllowed(member.controlLevel, 'agent-prompt'), channel: command.channel, text: command.text, image: command.image,
       authorKind: command.authorKind, authorName: command.authorName })
   });
   if (outcome.type === 'terminal-stream' || outcome.type === 'chat') return;

@@ -48,7 +48,7 @@ const ARCHIVES: Record<Platform, { whisper: Asset; piper: Asset; whisperBinary: 
 const listeners = new Set<(progress: VoiceDownloadProgress) => void>();
 const lastDownloadNotice = new Map<string, number>();
 
-/** The main process may forward this event over IPC as `voice:download-progress`. */
+/** The main process forwards this event over IPC as `voice:download-progress`. */
 export function onVoiceDownloadProgress(listener: (progress: VoiceDownloadProgress) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -62,16 +62,10 @@ function progress(event: VoiceDownloadProgress): void {
   } else {
     lastDownloadNotice.delete(event.asset);
   }
+  // The main process forwards these to app windows as `voice:download-progress`.
   for (const listener of listeners) {
     try { listener(event); } catch { /* UI observers cannot fail an asset install */ }
   }
-  // This module is also imported by plain Node tests, so load Electron only
-  // when a real download is underway in the desktop main process.
-  void import('electron').then(({ BrowserWindow }) => {
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) window.webContents.send('voice:download-progress', event);
-    }
-  }).catch(() => {});
 }
 
 async function voiceRoot(): Promise<string> {

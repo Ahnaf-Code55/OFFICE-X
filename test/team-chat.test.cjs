@@ -117,3 +117,23 @@ test('a message tagging me by first name is flagged for the pop-up', () => {
   chat.receiveAgent('a', 'done, no tag');
   assert.deepEqual(emitted, [true, false]);
 });
+
+test('task-request teammates reach the owner but never prompt local agents', () => {
+  const kv = new Map();
+  const delivered = [];
+  const emitted = [];
+  const chat = createChat({
+    dir: fs.mkdtempSync(path.join(os.tmpdir(), 'chat-')),
+    getKv: (k) => kv.get(k), setKv: (k, v) => kv.set(k, v),
+    myName: () => 'Me', agentName: (id) => id, agentIds: () => ['a'],
+    deliverToAgent: (id) => delivered.push(id),
+    sendToTeammates: async () => {}, emit: (m) => emitted.push(m.text)
+  });
+  const remote = (canPromptAgents, text) => chat.receiveRemote({ memberName: 'Friend', canPromptAgents, channel: 'everyone',
+    text, image: '', authorKind: 'human', authorName: 'Friend' });
+  remote(false, '@a rm -rf everything');
+  assert.deepEqual(delivered, [], 'task-requests access cannot type into an agent');
+  assert.deepEqual(emitted, ['@a rm -rf everything'], 'the owner still sees it');
+  remote(true, 'hi a');
+  assert.deepEqual(delivered, ['a'], 'delegated access reaches agents');
+});
