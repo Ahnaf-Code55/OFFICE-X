@@ -21,12 +21,37 @@ export type ParsedTeamAction =
   | { type: 'agent-prompt'; agentId: string; prompt: string }
   | { type: 'terminal-input'; agentId: string; input: string }
   | { type: 'terminal-stream'; agentId: string; output: string; sequence: number; streamId: string; gap: boolean }
-  | { type: 'chat'; channel: 'leadership' | 'managers' | 'everyone'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string };
+  | { type: 'chat'; channel: 'leadership' | 'managers' | 'everyone'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string }
+  | ({ type: 'rtc-signal' } & RtcSignal);
+
+/**
+ * WebRTC signalling for a human-to-human voice call. One fixed shape for every
+ * kind so the parser stays an exact-key check:
+ * - offer/answer: `sdp` is the full session description (ICE candidates
+ *   gathered so far are embedded), the candidate fields are empty/-1.
+ * - candidate: a late trickled ICE candidate; `sdp` is empty. `sdpMid` '' and
+ *   `sdpMLineIndex` -1 stand for null.
+ * - hangup: ends, declines, or refuses (busy) the call; everything else empty.
+ * Media never crosses this channel, only the setup needed to open a direct
+ * peer connection.
+ */
+export interface RtcSignal {
+  callId: string;
+  kind: 'offer' | 'answer' | 'candidate' | 'hangup';
+  sdp: string;
+  candidate: string;
+  sdpMid: string;
+  sdpMLineIndex: number;
+}
 
 /** Base64 image budget: keeps a sealed chat envelope under MAX_TEAM_MESSAGE_BYTES. */
 export const MAX_CHAT_IMAGE_CHARS = 150_000;
 export const MAX_CHAT_TEXT = 4000;
 const CHAT_IMAGE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+export const MAX_RTC_SDP = 16_000;
+export const MAX_RTC_CANDIDATE = 2000;
+const RTC_CALL_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const RTC_KEYS = ['callId', 'kind', 'sdp', 'candidate', 'sdpMid', 'sdpMLineIndex'] as const;
 
 export function teamTaskRequestRequiresApproval(access: PeerControlLevel, mode: TriggerMode): boolean {
   return access === 'task-requests' || mode !== 'allow-all';
@@ -41,6 +66,28 @@ function text(value: unknown, min: number, max: number, field: string): string {
   const normalized = value.trim();
   if (normalized.length < min || normalized.length > max) throw new Error(`invalid teammate ${field} size`);
   return normalized;
+}
+
+/** Strict RTC signal check, shared by teammate ingress and the renderer's send IPC. */
+export function parseRtcSignal(raw: unknown): RtcSignal {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('invalid rtc signal');
+  const body = raw as Record<string, unknown>;
+  const { callId, kind, sdp, candidate, sdpMid, sdpMLineIndex } = body;
+  if (!exactKeys(body, RTC_KEYS)
+    || typeof callId !== 'string' || !RTC_CALL_ID.test(callId)
+    || (kind !== 'offer' && kind !== 'answer' && kind !== 'candidate' && kind !== 'hangup')
+    || typeof sdp !== 'string' || sdp.length > MAX_RTC_SDP
+    || typeof candidate !== 'string' || candidate.length > MAX_RTC_CANDIDATE
+    || typeof sdpMid !== 'string' || sdpMid.length > 64
+    || typeof sdpMLineIndex !== 'number' || !Number.isInteger(sdpMLineIndex) || sdpMLineIndex < -1 || sdpMLineIndex > 64) {
+    throw new Error('invalid rtc signal');
+  }
+  const description = kind === 'offer' || kind === 'answer';
+  if (description ? !sdp.startsWith('v=0') : sdp !== '') throw new Error('invalid rtc signal sdp');
+  if (kind === 'candidate' ? !candidate.startsWith('candidate:') : (candidate !== '' || sdpMid !== '' || sdpMLineIndex !== -1)) {
+    throw new Error('invalid rtc signal candidate');
+  }
+  return { callId, kind, sdp, candidate, sdpMid, sdpMLineIndex };
 }
 
 /** Parse action bodies and re-apply the current local permission at dispatch time. */
@@ -109,5 +156,6 @@ export function parseTeamAction(input: {
     return { type: 'chat', channel: body.channel, text: body.text.trim(), image: body.image, authorKind: body.authorKind,
       authorName: text(body.authorName, 1, 60, 'chat author') };
   }
+  if (message.action === 'rtc-signal') return { type: 'rtc-signal', ...parseRtcSignal(body) };
   throw new Error(`unsupported teammate action: ${message.action}`);
 }

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore, type Agent } from '@/store/store';
 import { PixelButton } from '../PixelButton';
 import { SpritePortrait } from '../SpritePortrait';
+import { useTeammateCall } from './useTeammateCall';
 
 type ChatView = Awaited<ReturnType<typeof window.cth.listChat>>[number];
 type Channel = ChatView['channel'];
 type Tier = Parameters<typeof window.cth.setChatTier>[1];
+type Presence = Awaited<ReturnType<typeof window.cth.getOrgPresence>>;
 
 // Mirrors canHear() in src/main/chat.ts (main module can't be imported here).
 const RANK: Record<Tier, number> = { off: 0, staff: 1, middle: 2, leadership: 3 };
@@ -20,7 +22,7 @@ const MIN_SPEECH_MS = 400;
 const MAX_SPEECH_MS = 25_000;
 
 /** One seat at the table: the office sprite (or an initial for humans), ringed while speaking. */
-function Seat({ name, speaking, accent, character }: { name: string; speaking: boolean; accent: string; character?: Agent['character'] }) {
+function Seat({ name, speaking, accent, character, children }: { name: string; speaking: boolean; accent: string; character?: Agent['character']; children?: ReactNode }) {
   return <div style={{ display: 'grid', justifyItems: 'center', gap: 6, width: 88 }}>
     <div style={{
       width: 64, height: 64, display: 'grid', placeItems: 'center', background: `var(--cth-${accent}-light)`,
@@ -30,11 +32,13 @@ function Seat({ name, speaking, accent, character }: { name: string; speaking: b
       {character ? <SpritePortrait character={character} scale={2} /> : <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 22 }}>{name.slice(0, 1).toUpperCase()}</span>}
     </div>
     <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{name}</span>
+    {children}
   </div>;
 }
 
 /** Voice meeting on top of the team chat: my speech is transcribed (Whisper) and posted
- *  to the channel; AI and teammate messages in that channel are spoken aloud (Piper). */
+ *  to the channel; AI and teammate messages in that channel are spoken aloud (Piper).
+ *  Online teammates can also be called directly (WebRTC audio, see useTeammateCall). */
 function Room({ onLeave }: { onLeave: () => void }) {
   const agents = useStore((state) => state.agents);
   const [channel, setChannel] = useState<Channel>('everyone');
@@ -49,6 +53,12 @@ function Room({ onLeave }: { onLeave: () => void }) {
   channelRef.current = channel;
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
+  const [online, setOnline] = useState<Presence>([]);
+  const teammateCall = useTeammateCall(muted);
+  const { call } = teammateCall;
+  // While talking to a human directly, the mic stays out of the STT → chat pipeline.
+  const inCallRef = useRef(false);
+  inCallRef.current = !!call && call.state !== 'ringing';
   const playback = useRef<{ ctx: AudioContext; queue: ChatView[]; source: AudioBufferSourceNode | null; busy: boolean } | null>(null);
 
   const interrupt = () => {
@@ -89,6 +99,8 @@ function Room({ onLeave }: { onLeave: () => void }) {
     playback.current = { ctx: new AudioContext(), queue: [], source: null, busy: false };
     void window.cth.listChat().then(setMessages);
     void window.cth.getChatTiers().then(setTiers);
+    void window.cth.getOrgPresence().then(setOnline);
+    const offPresence = window.cth.onOrgPresence(setOnline);
     const offMessage = window.cth.onChatMessage((message) => {
       setMessages((prev) => [...prev, message].slice(-100));
       if (message.authorKind !== 'me' && message.channel === channelRef.current && message.text && playback.current) {
@@ -136,7 +148,7 @@ function Room({ onLeave }: { onLeave: () => void }) {
         } catch (e) { setStatus(`Transcription failed: ${e instanceof Error ? e.message : String(e)}`); }
       };
       node.onaudioprocess = (event) => {
-        if (mutedRef.current) return;
+        if (mutedRef.current || inCallRef.current) return;
         const frame = event.inputBuffer.getChannelData(0);
         let sum = 0;
         for (const v of frame) sum += v * v;
@@ -158,7 +170,7 @@ function Room({ onLeave }: { onLeave: () => void }) {
 
     return () => {
       stopped = true;
-      offMessage(); offProgress();
+      offMessage(); offProgress(); offPresence();
       interrupt();
       void playback.current?.ctx.close();
       playback.current = null;
@@ -170,7 +182,8 @@ function Room({ onLeave }: { onLeave: () => void }) {
 
   const heard = agents.filter((a) => RANK[tiers[a.id] ?? 'off'] >= CHANNEL_RANK[channel]);
   // Teammates and their AIs (remote posts carry no local agentId).
-  const humans = [...new Set(messages.filter((m) => m.authorKind !== 'me' && !m.agentId && m.channel === channel && Date.now() - m.ts < 30 * 60_000).map((m) => m.authorName))];
+  const humans = [...new Set(messages.filter((m) => m.authorKind !== 'me' && !m.agentId && m.channel === channel && Date.now() - m.ts < 30 * 60_000).map((m) => m.authorName))]
+    .filter((name) => !online.some((peer) => peer.name === name));
   const last = messages.filter((m) => m.channel === channel).at(-1);
 
   const send = async () => {
@@ -182,17 +195,32 @@ function Room({ onLeave }: { onLeave: () => void }) {
 
   return <section aria-label="Meeting room" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--cth-cream-50)', color: 'var(--cth-ink-900)', fontFamily: 'var(--cth-font-ui)', fontSize: 13 }}>
     <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderBottom: '2px solid var(--cth-ink-100)' }}>
-      <span style={{ flex: 1, fontFamily: 'var(--cth-font-mono)', fontSize: 12, color: 'var(--cth-ink-500)' }}>● live · {status}</span>
+      <span style={{ flex: 1, fontFamily: 'var(--cth-font-mono)', fontSize: 12, color: 'var(--cth-ink-500)' }}>● live · {call?.state === 'live' ? `on a call with ${call.memberName}` : teammateCall.notice || status}</span>
       <select value={channel} onChange={(e) => { interrupt(); setChannel(e.target.value as Channel); }} aria-label="Meeting channel" style={{ ...field, padding: '2px 4px' }}>
         <option value="everyone">#Everyone</option><option value="managers">#Managers</option><option value="leadership">#Leadership</option>
       </select>
     </header>
     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexWrap: 'wrap', alignContent: 'center', justifyContent: 'center', gap: 16, padding: 16 }}>
       <Seat name={muted ? 'You (muted)' : 'You'} speaking={meSpeaking} accent="sky" />
+      {online.map((peer) => {
+        const mine = call?.memberId === peer.id;
+        return <Seat key={peer.id} name={peer.name} accent="mint"
+          speaking={speaker === peer.name || (mine && call.state === 'live' && teammateCall.remoteSpeaking)}>
+          {mine
+            ? call.state !== 'ringing' && <PixelButton size="sm" variant="destructive" onClick={teammateCall.hangup}>{call.state === 'live' ? 'hang up' : 'cancel'}</PixelButton>
+            : <PixelButton size="sm" variant="secondary" disabled={!!call} onClick={() => teammateCall.start(peer.id, peer.name)}>call</PixelButton>}
+        </Seat>;
+      })}
       {humans.map((name) => <Seat key={name} name={name} speaking={speaker === name} accent="mint" />)}
       {heard.map((a) => <Seat key={a.id} name={a.name} speaking={speaker === a.name} accent={a.accent} character={a.character} />)}
       {!heard.length && <p style={{ width: '100%', textAlign: 'center', color: 'var(--cth-ink-500)' }}>No AI can hear #{channel}. Add them in the team chat tab under "who's in chat".</p>}
     </div>
+    {call?.state === 'ringing' && <div role="alertdialog" aria-label="Incoming call" style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 8px 6px', padding: '6px 8px', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)' }}>
+      <strong style={{ flex: 1 }}>{call.memberName} is calling you</strong>
+      <PixelButton size="sm" onClick={teammateCall.accept}>accept</PixelButton>
+      <PixelButton size="sm" variant="destructive" onClick={teammateCall.hangup}>decline</PixelButton>
+    </div>}
+    <audio ref={teammateCall.audioRef} autoPlay />
     {last && <p style={{ margin: '0 8px 6px', padding: '6px 8px', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)' }}>
       <strong>{last.authorKind === 'me' ? 'You' : last.authorName}:</strong> {last.text.slice(0, 200)}
     </p>}

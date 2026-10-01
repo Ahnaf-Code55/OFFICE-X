@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { UsageLimits } from '../shared/usageLimits';
 import type { ChatChannel, ChatTier, ChatView } from '../main/chat';
+import type { RtcSignal } from '../main/teamActions';
 import type { AgentProvider } from '../shared/agentProvider';
 import type { HireManifest } from '../shared/hire';
 export type { HireManifest } from '../shared/hire';
@@ -1287,6 +1288,14 @@ const api = {
     return () => ipcRenderer.removeListener('chat:message', listener);
   },
   setMeetingMic: (live: boolean): Promise<boolean> => ipcRenderer.invoke('meeting:setMic', live),
+  /** Send one WebRTC call signal to a trusted teammate over the sealed shared-office channel. */
+  sendRtcSignal: (memberId: string, signal: RtcSignal): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('meeting:sendRtcSignal', memberId, signal),
+  onRtcSignal: (cb: (value: { memberId: string; memberName: string; signal: RtcSignal }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, value: Parameters<typeof cb>[0]) => cb(value);
+    ipcRenderer.on('meeting:rtcSignal', listener);
+    return () => ipcRenderer.removeListener('meeting:rtcSignal', listener);
+  },
   transcribeVoice: (pcm16kMono: Int16Array): Promise<string> =>
     ipcRenderer.invoke('voice:transcribe', new Uint8Array(pcm16kMono.buffer, pcm16kMono.byteOffset, pcm16kMono.byteLength)),
   synthesizeVoice: (text: string): Promise<Uint8Array | null> => ipcRenderer.invoke('voice:synthesize', text),

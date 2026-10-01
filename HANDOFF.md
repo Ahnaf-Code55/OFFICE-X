@@ -27,10 +27,11 @@ Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring 
 - Two-computer invitation, control, output sharing, and revocation acceptance with the friend's Bazzite device remain unverified.
 
 - 2026-10-01: remote `chat` from task-requests teammates no longer reaches local agents (`src/main/chat.ts`, `index.ts`; test in `test/team-chat.test.cjs`); voice download progress no longer double-emits (`voice/assets.ts`); stale `opencode-go/deepseek-flash` removed from `docs/model-catalog.json`. Focused suite 933/936: `proc-kill` fails only in containers without a zombie-reaping PID 1.
-- Still missing from PLAN.md: human-to-human WebRTC (`rtc-signal`), image attach in MeetingRoom, per-AI voices, Phase 5 review notes.
+- 2026-10-01: human-to-human calls: `rtc-signal` action (`teamProtocol.ts`, `teamActions.ts` parseRtcSignal, `teamDispatch.ts`), IPC `meeting:sendRtcSignal`/`meeting:rtcSignal`, renderer `meeting/useTeammateCall.ts` + call/accept buttons in `MeetingRoom.tsx`; tests `test/rtc-signal.test.cjs`. STUN only (no TURN), rings only while the meeting room is open; never tried with real audio.
+- Still missing from PLAN.md: image attach in MeetingRoom, per-AI voices, Phase 5 review notes.
 
 ## NEXT TASK
-Enter the relay address in Shared Office → Self-hosted on both devices, then run reciprocal invite and cross-device control acceptance with the Bazzite teammate and fix any observed failure.
+Run a real two-computer call in the meeting room (accept, mute, hang up). Enter the relay address in Shared Office → Self-hosted on both devices, then run reciprocal invite and cross-device control acceptance with the Bazzite teammate and fix any observed failure.
 
 ## Handoff practice
 Read this note and `git log -5`, inspect only files needed for the task, and update this note with changed files, verification, open issues, and the exact next step before handing off; keep it under 40 lines and commit working steps.

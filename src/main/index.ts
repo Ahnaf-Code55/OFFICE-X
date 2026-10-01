@@ -58,7 +58,7 @@ import { pcm16kMonoToWav } from './voice/wav';
 import { onVoiceDownloadProgress } from './voice/assets';
 import { localModels, pullModel, withBigContext, LOCAL_CTX } from './ollama';
 import { CHAT_CHANNELS, createChat, type ChatChannel, type ChatTier } from './chat';
-import { MAX_CHAT_IMAGE_CHARS, MAX_CHAT_TEXT } from './teamActions';
+import { MAX_CHAT_IMAGE_CHARS, MAX_CHAT_TEXT, parseRtcSignal, type RtcSignal } from './teamActions';
 import {
   appendTriggerHistory, clearTriggerHistory, listTriggerHistory, updateTriggerHistory
 } from './triggerHistory';
@@ -4559,9 +4559,16 @@ function dispatchTeamMessage(message: TeamMessage, peerId: string): void {
     },
     receiveChat: (command) => chat.receiveRemote({ memberName: member.displayName,
       canPromptAgents: isPeerActionAllowed(member.controlLevel, 'agent-prompt'), channel: command.channel, text: command.text, image: command.image,
-      authorKind: command.authorKind, authorName: command.authorName })
+      authorKind: command.authorKind, authorName: command.authorName }),
+    // Call setup is relayed straight to the meeting room; the renderer decides
+    // whether to ring, and media then flows peer to peer, never through here.
+    receiveRtcSignal: (signal) => {
+      const payload = { memberId: member.memberId, memberName: member.displayName, signal };
+      for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('meeting:rtcSignal', payload);
+    }
   });
-  if (outcome.type === 'terminal-stream' || outcome.type === 'chat') return;
+  // Live streams, chat and call signalling are not trigger-history events.
+  if (outcome.type === 'terminal-stream' || outcome.type === 'chat' || outcome.type === 'rtc-signal') return;
   const entry = (input: { title?: string; body: string; kind: InboundKind; decision?: 'pending' | 'auto-allowed' }) => appendTriggerHistory({
     source: 'org', sourceId: member.memberId, sourceName: member.displayName, direction: 'inbound',
     peer: member.displayName, title: input.title, body: input.body, kind: input.kind,
@@ -4591,7 +4598,7 @@ function dispatchTeamMessage(message: TeamMessage, peerId: string): void {
   notifyTriggerHistoryUpdated();
 }
 
-async function sendTeamMessage(memberId: string, action: 'task-request' | 'agent-prompt' | 'terminal-input' | 'chat', body: Record<string, unknown>): Promise<void> {
+async function sendTeamMessage(memberId: string, action: 'task-request' | 'agent-prompt' | 'terminal-input' | 'chat' | 'rtc-signal', body: Record<string, unknown>): Promise<void> {
   const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
   if (!cfg.enabled || !cfg.officeId || !teamTransport || !persist.isOpen) throw new Error('shared office transport is not ready');
   const member = persist.getTrustedTeamMember(cfg.officeId, memberId);
@@ -4623,7 +4630,7 @@ async function sendTeamMessage(memberId: string, action: 'task-request' | 'agent
     } catch (error) { lastError = error; }
   }
   if (lastError) throw lastError;
-  if (action === 'chat') return; // the chat room is its own history
+  if (action === 'chat' || action === 'rtc-signal') return; // the chat room is its own history; calls keep none
   appendTriggerHistory({ source: 'org', sourceId: member.memberId, sourceName: member.displayName,
     direction: 'outbound', peer: member.displayName,
     title: action === 'task-request' ? String(body.title ?? 'Task request') : action === 'agent-prompt' ? 'Agent prompt' : 'Terminal input',
@@ -5099,6 +5106,18 @@ onVoiceDownloadProgress((progress) => {
 ipcMain.handle('meeting:setMic', (event, live: unknown) => {
   if (isAppWindow(event)) meetingMicLive = live === true;
   return meetingMicLive;
+});
+// Human-to-human call: the renderer owns the RTCPeerConnection and sends its
+// offer/answer/candidate/hangup to one trusted teammate over the sealed channel.
+ipcMain.handle('meeting:sendRtcSignal', async (event, memberId: unknown, raw: unknown) => {
+  if (!isAppWindow(event)) return { ok: false, error: 'invalid renderer' };
+  let signal: RtcSignal;
+  try { signal = parseRtcSignal(raw); } catch { return { ok: false, error: 'invalid call signal' }; }
+  if (!isTeamDeviceId(memberId)) return { ok: false, error: 'select a teammate to call' };
+  try {
+    await sendTeamMessage(memberId, 'rtc-signal', { ...signal });
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
 });
 ipcMain.handle('voice:transcribe', async (event, pcm: unknown) => {
   if (!isAppWindow(event) || !(pcm instanceof Uint8Array) || pcm.byteLength < 2 || pcm.byteLength > MAX_UTTERANCE_BYTES) return '';

@@ -2,6 +2,7 @@ import type { TeamMessage } from '../shared/teamProtocol';
 import type { TriggerMode } from '../shared/triggers';
 import {
   parseTeamAction,
+  type RtcSignal,
   teamTaskRequestRequiresApproval,
   type ParsedTeamAction,
   type TeamActionMember,
@@ -13,7 +14,8 @@ export type TeamDispatchOutcome =
   | { type: 'agent-prompt'; decision: 'auto-allowed'; agentId: string; prompt: string }
   | { type: 'terminal-input'; decision: 'auto-allowed'; agentId: string; input: string }
   | { type: 'terminal-stream'; decision: 'auto-allowed'; agentId: string; output: string; sequence: number; streamId: string; gap: boolean }
-  | { type: 'chat'; decision: 'auto-allowed'; channel: 'leadership' | 'managers' | 'everyone'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string };
+  | { type: 'chat'; decision: 'auto-allowed'; channel: 'leadership' | 'managers' | 'everyone'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string }
+  | ({ type: 'rtc-signal'; decision: 'auto-allowed' } & RtcSignal);
 
 export interface TeamDispatchInput {
   message: TeamMessage;
@@ -26,6 +28,7 @@ export interface TeamDispatchInput {
   writeTerminal: (agentId: string, input: string) => void;
   receiveTerminalStream: (stream: Extract<ParsedTeamAction, { type: 'terminal-stream' }>) => void;
   receiveChat: (chat: Extract<ParsedTeamAction, { type: 'chat' }>) => void;
+  receiveRtcSignal: (signal: RtcSignal) => void;
 }
 
 /** Revalidate the current member level, parse the exact payload, and perform the
@@ -56,6 +59,11 @@ export function dispatchTeamAction(input: TeamDispatchInput): TeamDispatchOutcom
   }
   if (command.type === 'chat') {
     input.receiveChat(command);
+    return { ...command, decision: 'auto-allowed' };
+  }
+  if (command.type === 'rtc-signal') {
+    const { type: _type, ...signal } = command;
+    input.receiveRtcSignal(signal);
     return { ...command, decision: 'auto-allowed' };
   }
   input.receiveTerminalStream(command);

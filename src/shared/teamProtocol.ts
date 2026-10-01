@@ -31,7 +31,8 @@ export type TeamAction =
   | 'agent-prompt'
   | 'terminal-stream'
   | 'terminal-input'
-  | 'chat';
+  | 'chat'
+  | 'rtc-signal';
 
 export interface TeamIdentity {
   deviceId: string;
@@ -112,12 +113,14 @@ export interface TeamEnvelope {
 }
 
 const ACTIONS: readonly TeamAction[] = [
-  'presence', 'task-request', 'agent-status', 'agent-prompt', 'terminal-stream', 'terminal-input', 'chat'
+  'presence', 'task-request', 'agent-status', 'agent-prompt', 'terminal-stream', 'terminal-input', 'chat', 'rtc-signal'
 ];
 
+// `rtc-signal` is WebRTC call setup between two humans; it never reaches an
+// agent, so every level that may chat with the owner may also call them.
 const ALLOWED_ACTIONS: Record<PeerControlLevel, ReadonlySet<TeamAction>> = {
-  'task-requests': new Set(['presence', 'task-request', 'agent-status', 'chat']),
-  delegated: new Set(['presence', 'task-request', 'agent-status', 'agent-prompt', 'chat']),
+  'task-requests': new Set(['presence', 'task-request', 'agent-status', 'chat', 'rtc-signal']),
+  delegated: new Set(['presence', 'task-request', 'agent-status', 'agent-prompt', 'chat', 'rtc-signal']),
   'full-control': new Set(ACTIONS)
 };
 
