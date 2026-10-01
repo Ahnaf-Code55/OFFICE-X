@@ -38,6 +38,7 @@ import { PersistStore } from './db';
 import { readAgentUsage, readChatTurns, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
 import { listIssues, listCIRuns } from './github';
 import { SlackWebhookServer, SlackReplyServer, postSlackReply, type SlackEventFile } from './slack';
+import { buildPlannerProtocol, createSlackUserNameResolver } from './slackPlanner';
 import {
   WebhookServer,
   type WebhookDispatch, type WebhookEndpointRef, type WebhookInbound, type WebhookTaskStatus
@@ -1456,6 +1457,25 @@ let slackReplyServer: SlackReplyServer | null = null;
  *  Request URL after a reopen (Slack reuses it until the server is stopped). */
 let lastSlackUrl: string | undefined;
 
+/** The reply-helper invocation for one thread, minus `--text`. Shared by the
+ *  autonomy and planner protocols so both hand out the identical command. */
+function slackReplyCommand(channel: string, threadTs: string, helperPath: string): string {
+  return `"${hive.nodeCommand()}" "${helperPath}" --channel ${channel} --thread ${threadTs}`;
+}
+
+/** Slack user id → display name (users.info, cached; needs the optional
+ *  `users:read` scope). Failure just means the planner sees the id only. */
+const resolveSlackUserName = createSlackUserNameResolver();
+
+/** The configured Slack prompt planner, when it names a live (registered,
+ *  non-archived) agent; otherwise undefined and Slack goes to god as before. */
+function liveSlackPlannerId(): string | undefined {
+  const id = readConfig().slackPlannerAgentId;
+  if (!id) return undefined;
+  const agent = hive.registry().agents[id];
+  return agent && !agent.archived ? id : undefined;
+}
+
 /** AUTONOMOUS REQUEST PROTOCOL — built PER MESSAGE (not a static const) so it can
  *  embed the request's concrete `channel`, `thread_ts`, and the resolved helper
  *  path. Prepended (server-side, authoritatively) to the working instruction god
@@ -1469,7 +1489,7 @@ let lastSlackUrl: string | undefined;
 function buildAutonomousRequestProtocol(channel: string, threadTs: string, helperPath: string): string {
   return `[AUTONOMOUS REQUEST PROTOCOL — this request arrived via Slack; no interactive human is watching] Handle it under this protocol:
 1. ROUTE FAST — triage and hand this to the single most-relevant agent right away. CHECK THE LIVE ROSTER FIRST (active agents in registry.json + their state in fleet.json) and prefer an EXISTING agent that fits — especially when the request names one ("ask Pam…", "have Jim…"): route to that agent and only spawn a new one if none is a sensible fit. Decompose only if it genuinely needs several. Don't sit on it.
-2. DELEGATE WITH THE REPLY HANDLE — tell that agent to do the work autonomously AND to post its result back to THIS Slack thread itself when done, using exactly: "${hive.nodeCommand()}" "${helperPath}" --channel ${channel} --thread ${threadTs} --text "<substantive result>" (that first path is the harness's bundled Node, already resolved for this machine — pass it verbatim; bare "node" is not on the hook/agent PATH on many machines.)
+2. DELEGATE WITH THE REPLY HANDLE — tell that agent to do the work autonomously AND to post its result back to THIS Slack thread itself when done, using exactly: ${slackReplyCommand(channel, threadTs, helperPath)} --text "<substantive result>" (that first path is the harness's bundled Node, already resolved for this machine — pass it verbatim; bare "node" is not on the hook/agent PATH on many machines.)
 3. AUTONOMOUS EXECUTION — no interactive questions. PAUSE/ask ONLY for high-severity actions: pushing to main or any remote; buying or spawning infrastructure or paid services; deleting an existing repo, file, or folder it did not create. Stay READ-ONLY at critical infrastructure and git-push-type changes unless explicitly approved.
 4. DIRECT, SUBSTANTIVE REPLY — the agent posts a real Slack-mrkdwn answer (short *bold* headline + the actual outcome/specifics/links), NEVER a bare "done"/":white_check_mark:".
 5. REPORT TO GOD — the agent then tells you (Michael) what it did.
@@ -1757,10 +1777,13 @@ async function startSlackServer(): Promise<{ ok: boolean; url?: string; error?: 
     // liveWebContents() so a message arriving during window teardown can't throw.
     // Downloads any file attachments (bot token stays in main; local paths go to IPC).
     onMessage: async (m) => {
-      const localFiles = await downloadSlackFiles(
-        m._rawFiles ?? [],
-        readConfig().slackBotToken
-      );
+      const botToken = readConfig().slackBotToken;
+      // Name lookup runs alongside the download and never fails the message —
+      // at worst (no users:read scope, timeout) the sender is known by id only.
+      const [localFiles, senderName] = await Promise.all([
+        downloadSlackFiles(m._rawFiles ?? [], botToken),
+        resolveSlackUserName(m.user, botToken)
+      ]);
       // `text` stays the user's RAW Slack text → drives the readable kanban card
       // title. `autonomyPreamble` is the authoritative policy block the renderer
       // prepends ONLY to god's working instruction (his PTY prompt), keeping the
@@ -1768,10 +1791,31 @@ async function startSlackServer(): Promise<{ ok: boolean; url?: string; error?: 
       // PROTOCOL carries THIS request's concrete channel, thread_ts, and the
       // resolved helper path — god hands the worker an exact reply command.
       // Server-side so it applies to every session.
-      const ipcMsg: { text: string; channel: string; ts: string; thread_ts: string; autonomyPreamble: string; files?: typeof localFiles } = {
+      // `sender` lets the office tell the channel's people apart. When a prompt
+      // planner is configured (and still live), the renderer routes to it with
+      // `plannerPreamble` instead of god's autonomy protocol.
+      const ipcMsg: {
+        text: string; channel: string; ts: string; thread_ts: string; autonomyPreamble: string;
+        sender?: { id: string; name?: string }; plannerAgentId?: string; plannerPreamble?: string;
+        files?: typeof localFiles;
+      } = {
         text: m.text, channel: m.channel, ts: m.ts, thread_ts: m.thread_ts,
         autonomyPreamble: buildAutonomousRequestProtocol(m.channel, m.thread_ts, slackReplyScriptPath())
       };
+      if (m.user) ipcMsg.sender = senderName ? { id: m.user, name: senderName } : { id: m.user };
+      const plannerId = liveSlackPlannerId();
+      if (plannerId) {
+        const root = hive.root();
+        ipcMsg.plannerAgentId = plannerId;
+        ipcMsg.plannerPreamble = buildPlannerProtocol({
+          channel: m.channel,
+          threadTs: m.thread_ts,
+          replyCommand: slackReplyCommand(m.channel, m.thread_ts, slackReplyScriptPath()),
+          senderId: m.user,
+          senderName,
+          boardPath: root ? join(root, 'prompt-board.md') : 'prompt-board.md'
+        });
+      }
       if (localFiles.length > 0) ipcMsg.files = localFiles;
       try { liveWebContents()?.send('slack:incomingMessage', ipcMsg); }
       catch { /* window torn down */ }
@@ -4278,7 +4322,7 @@ ipcMain.handle('slack:reply', (_evt, arg: unknown) => {
 ipcMain.handle('slack:setConfig', (_evt, patch: unknown) => {
   const p = (patch ?? {}) as {
     signingSecret?: unknown; botToken?: unknown; channelId?: unknown; port?: unknown; enabled?: unknown;
-    proactivePosting?: unknown;
+    proactivePosting?: unknown; plannerAgentId?: unknown;
   };
   const next: Partial<HarnessConfig> = {};
   // Trim string fields; an emptied field clears back to undefined.
@@ -4288,6 +4332,7 @@ ipcMain.handle('slack:setConfig', (_evt, patch: unknown) => {
   if (typeof p.port === 'number' && Number.isFinite(p.port)) next.slackPort = p.port;
   if (typeof p.enabled === 'boolean') next.slackEnabled = p.enabled;
   if (typeof p.proactivePosting === 'boolean') next.slackProactivePosting = p.proactivePosting;
+  if (typeof p.plannerAgentId === 'string') next.slackPlannerAgentId = p.plannerAgentId.trim() || undefined;
   writeConfig(next);
   // Reconcile the running server: disabling (or clearing the secret) stops it. We
   // deliberately do NOT auto-(re)start here — the user presses Start in Settings

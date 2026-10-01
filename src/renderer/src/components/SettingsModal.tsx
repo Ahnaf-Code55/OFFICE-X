@@ -101,6 +101,7 @@ const SLACK_CONNECT_STEPS = `Connect OFFICE-X to Slack
      chat:write          (office replies in-thread)
      channels:history    (read public-channel messages)
      groups:history      (read private-channel messages)
+     users:read          (optional: lets the planner see who is talking by name)
    Install to workspace, then copy the Bot User OAuth Token
    (xoxb-...) into the "Bot token" field here.
 4. Press Start (below) to launch the webhook and get your
@@ -399,6 +400,12 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   // App/voice-initiated proactive posting (the "queued" ack). Default OFF —
   // the Slack-origin done-reply round-trip is unaffected by this toggle.
   const [slackProactivePosting, setSlackProactivePosting] = useState(config.slackProactivePosting ?? false);
+  // Slack PROMPT PLANNER agent id; '' = off (Slack goes to god). Saved with the
+  // other Slack fields via slackPatch.
+  const [slackPlanner, setSlackPlanner] = useState(config.slackPlannerAgentId ?? '');
+  // Planner candidates: live (non-archived) agents, minus god (the "Off" option)
+  // and the enrich assistant.
+  const slackPlannerCandidates = useStore((s) => s.agents).filter((a) => !a.isGod && !a.isAssistant && !a.archived);
   const [tunnelUrl, setTunnelUrl] = useState('');
   const [slackBusy, setSlackBusy] = useState(false);
   const [slackNote, setSlackNote] = useState('');
@@ -552,6 +559,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setSlackChannel(cc.slackChannelId ?? '');
       setSlackPort(String(cc.slackPort ?? 3847));
       setSlackProactivePosting(cc.slackProactivePosting ?? false);
+      setSlackPlanner(cc.slackPlannerAgentId ?? '');
       const kgOn = (cc as { knowledgeGraph?: { enabled?: boolean } }).knowledgeGraph?.enabled === true;
       setKgEnabled(kgOn);
       setFreeflowEnabled(cc.freeflowEnabled !== false);
@@ -598,7 +606,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     channelId: slackChannel,
     port: Number(slackPort) || 3847,
     enabled,
-    proactivePosting: slackProactivePosting
+    proactivePosting: slackProactivePosting,
+    plannerAgentId: slackPlanner
   });
 
   const saveSlack = async () => {
@@ -1578,6 +1587,29 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                 {slackProactivePosting ? t('common.on') : t('common.off')}
                               </PixelButton>
                             </div>
+
+                            {/* PROMPT PLANNER — route Slack to one agent that answers
+                                with a prompt per asker instead of god. A saved id
+                                whose agent is gone still shows, so it can be cleared. */}
+                            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <span style={slackLabelStyle}>{t('settings.connections.slackPlanner')}</span>
+                              <select
+                                value={slackPlanner}
+                                onChange={(e) => setSlackPlanner(e.target.value)}
+                                style={slackInputStyle}
+                              >
+                                <option value="">{t('settings.connections.slackPlannerOff', { godName })}</option>
+                                {slackPlannerCandidates.map((a) => (
+                                  <option key={a.id} value={a.id}>{a.provider ? `${a.name} (${a.provider})` : a.name}</option>
+                                ))}
+                                {slackPlanner && !slackPlannerCandidates.some((a) => a.id === slackPlanner) && (
+                                  <option value={slackPlanner}>{slackPlanner}</option>
+                                )}
+                              </select>
+                              <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                                {t('settings.connections.slackPlannerHint')}
+                              </span>
+                            </label>
 
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                               {/* Start disabled once connected; Stop only when running. */}

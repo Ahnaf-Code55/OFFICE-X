@@ -191,6 +191,21 @@ export interface HiveRouteEvent {
   needsHuman: boolean;
 }
 
+/** A verified inbound Slack message (main's `slack:incomingMessage`). `sender`
+ *  is the Slack user (name only when users.info resolved it); `plannerAgentId` +
+ *  `plannerPreamble` are set only when a live prompt planner is configured. */
+export interface SlackIncomingMessage {
+  text: string;
+  channel: string;
+  ts: string;
+  thread_ts: string;
+  autonomyPreamble?: string;
+  sender?: { id: string; name?: string };
+  plannerAgentId?: string;
+  plannerPreamble?: string;
+  files?: { path: string; name: string; mimetype: string }[];
+}
+
 /** A direct hive message addressed to a provider that cannot drain hive inbox.
  *  The renderer turns this into a queued terminal work order for that agent. */
 export interface HiveTerminalHandoffEvent {
@@ -301,6 +316,7 @@ export interface HarnessConfig {
   slackChannelId?: string;
   slackPort?: number;
   slackProactivePosting?: boolean;
+  slackPlannerAgentId?: string;
   webhookEnabled?: boolean;
   webhookSecret?: string;
   webhookPort?: number;
@@ -1154,8 +1170,8 @@ const api = {
   // ─── Slack integration (Slack message → Michael's queue) ─────────────────────
   /** Register a listener for inbound Slack messages; returns an unsubscribe fn.
    *  The message carries the thread coordinates needed to reply in-thread. */
-  onSlackMessage: (cb: (msg: { text: string; channel: string; ts: string; thread_ts: string; autonomyPreamble?: string; files?: { path: string; name: string; mimetype: string }[] }) => void): (() => void) => {
-    const listener = (_e: IpcRendererEvent, msg: { text: string; channel: string; ts: string; thread_ts: string; autonomyPreamble?: string; files?: { path: string; name: string; mimetype: string }[] }) => cb(msg);
+  onSlackMessage: (cb: (msg: SlackIncomingMessage) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, msg: SlackIncomingMessage) => cb(msg);
     ipcRenderer.on('slack:incomingMessage', listener);
     return () => ipcRenderer.removeListener('slack:incomingMessage', listener);
   },
@@ -1181,7 +1197,7 @@ const api = {
   /** Persist Slack settings (and stop the server if disabled / secret cleared). */
   slackSetConfig: (patch: {
     signingSecret?: string; botToken?: string; channelId?: string; port?: number; enabled?: boolean;
-    proactivePosting?: boolean;
+    proactivePosting?: boolean; plannerAgentId?: string;
   }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('slack:setConfig', patch),
 

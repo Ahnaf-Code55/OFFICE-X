@@ -341,6 +341,10 @@ export interface HarnessConfig {
    *  done-reply round-trip (a user @-mention → task → result posted back to that
    *  thread) or an agent's own direct in-thread reply — those always stay on. */
   slackProactivePosting?: boolean;
+  /** Hive agent id of the Slack PROMPT PLANNER. When set (and that agent is live),
+   *  each Slack message goes to it — it replies in-thread with a coding-agent
+   *  prompt for whoever asked — instead of god. Undefined = god (default). */
+  slackPlannerAgentId?: string;
 
   // ─── Free Flow (voice dictation → message queue) ───────────────────────────
   /** Master toggle for Free Flow push-to-talk dictation. Default OFF: with it off
@@ -456,6 +460,7 @@ const DEFAULTS: HarnessConfig = {
   slackChannelId: undefined,
   slackPort: undefined,
   slackProactivePosting: false,
+  slackPlannerAgentId: undefined,
   freeflowEnabled: true,
   groqApiKey: undefined,
   freeflowModel: 'whisper-large-v3-turbo',

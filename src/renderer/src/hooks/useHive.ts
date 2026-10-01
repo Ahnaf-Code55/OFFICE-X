@@ -997,6 +997,29 @@ export function useHive(config: HarnessConfig | null): void {
         text = text ? `${text}\n\nAttached files:\n${fileLines}` : `Attached files:\n${fileLines}`;
       }
       const slack = { channel: msg.channel, thread_ts: msg.thread_ts };
+      const who = msg.sender?.name ?? (msg.sender?.id ? `<@${msg.sender.id}>` : undefined);
+      // PROMPT PLANNER: the chosen agent answers in-thread itself with a prompt
+      // for whoever asked; it implements nothing. `instruction` carries the
+      // protocol for every provider (the drain types it for Codex/OpenCode too).
+      // No `slack` meta: that would stamp a kanban card nothing ever completes.
+      // An agent the store doesn't have (closed tab) falls through to god.
+      const planner = msg.plannerAgentId && msg.plannerPreamble
+        ? useStore.getState().agents.find((a) => a.id === msg.plannerAgentId)
+        : undefined;
+      if (planner && msg.plannerPreamble) {
+        useStore.getState().enqueueMessage(planner.id, `[${who ?? 'Slack'}] ${text}`, {
+          instruction: `${msg.plannerPreamble}${text}`
+        });
+        void window.cth.slackReply({
+          channel: msg.channel,
+          thread_ts: msg.thread_ts,
+          text: ':memo: *Got it.* Writing your prompt…'
+        });
+        return;
+      }
+      // God path, unchanged apart from naming the asker on the card (name only —
+      // a raw <@U…> id would just clutter the kanban title).
+      if (msg.sender?.name) text = `[${msg.sender.name}] ${text}`;
       // `text` (raw user request + any attachment lines) drives the human-facing
       // kanban card title/description. The autonomy preamble — supplied verbatim
       // by main, the authoritative source — is prepended ONLY to god's working

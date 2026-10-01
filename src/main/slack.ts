@@ -94,11 +94,18 @@ export interface SlackInboundMessage {
   channel: string;
   ts: string;
   thread_ts: string;
+  /** Slack user id of the sender (U…/W…). Absent when the event carries none or
+   *  an unexpected shape — index.ts resolves it to a display name. */
+  user?: string;
   /** LOCAL paths of downloaded attachments (undefined for text-only messages). */
   files?: { path: string; name: string; mimetype: string }[];
   /** INTERNAL: raw Slack file metadata; consumed + stripped by index.ts onMessage. */
   _rawFiles?: SlackEventFile[];
 }
+
+/** A Slack user id as it appears in `event.user` (U… for users, W… for Enterprise
+ *  Grid). Anything else is dropped rather than forwarded into a prompt. */
+const SLACK_USER_ID_RE = /^[UW][A-Z0-9]+$/;
 
 /** Reject request bodies larger than this — Slack event payloads are tiny; the
  *  cap stops an unauthenticated peer from forcing unbounded memory use before
@@ -267,6 +274,7 @@ export class SlackWebhookServer {
           const isDuplicate = dupKey ? this.seenEvents.seen(dupKey) : false;
           if (!isDuplicate) {
             const msg: SlackInboundMessage = { text, channel, ts, thread_ts };
+            if (typeof ev.user === 'string' && SLACK_USER_ID_RE.test(ev.user)) msg.user = ev.user;
             if (rawFiles.length > 0) msg._rawFiles = rawFiles;
             try { void this.onMessage(msg); } catch { /* delivery is best-effort */ }
           }
@@ -318,6 +326,8 @@ interface SlackPayload {
     /** 'file_share' for file uploads; 'message_changed' / 'channel_join' etc. dropped. */
     subtype?: string;
     bot_id?: string;
+    /** Sender's Slack user id (absent on some bot/system subtypes). */
+    user?: string;
     channel?: string;
     text?: string;
     /** Message timestamp — Slack's per-message id, used as the reply thread root. */
