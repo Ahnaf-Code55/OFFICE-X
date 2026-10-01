@@ -23,7 +23,7 @@ const MAX_SPEECH_MS = 25_000;
 
 /** One seat at the table: the office sprite (or an initial for humans), ringed while speaking. */
 function Seat({ name, speaking, accent, character, children }: { name: string; speaking: boolean; accent: string; character?: Agent['character']; children?: ReactNode }) {
-  return <div style={{ display: 'grid', justifyItems: 'center', gap: 6, width: 88 }}>
+  return <div style={{ display: 'grid', justifyItems: 'center', alignContent: 'start', gap: 6, width: 88 }}>
     <div style={{
       width: 64, height: 64, display: 'grid', placeItems: 'center', background: `var(--cth-${accent}-light)`,
       boxShadow: speaking ? `0 0 0 3px var(--cth-${accent}), 0 0 0 5px var(--cth-ink-900)` : 'inset 0 0 0 1px var(--cth-ink-300)',
