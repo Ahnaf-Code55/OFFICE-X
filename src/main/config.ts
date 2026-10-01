@@ -254,8 +254,9 @@ export interface HarnessConfig {
   /** Passed to every spawned agent as `--max-turns <n>` when set; unset = no cap
    *  (Claude Code's default). A coarse runaway guard independent of the breaker. */
   maxTurns?: number;
-  /** Max concurrent god-triggered ephemeral Slack workers; extra spawn-requests
-   *  wait in the queue (natural backpressure, a resource backstop). Default 4. */
+  /** Max concurrent god-triggered ephemeral workers, clamped to 1..3
+   *  (workerSpawnPolicy); extra spawn-requests wait in the queue and start one
+   *  at a time. Default 3. */
   maxConcurrentWorkers?: number;
   /** Minutes an ephemeral worker may produce NO output before the reaper kills it
    *  — idle-based, never wall-clock, so an actively-working worker is never reaped.
@@ -440,7 +441,7 @@ const DEFAULTS: HarnessConfig = {
   // Seeded from the MCP catalog so the consent defaults never drift from it
   // (safe-readonly ON, write/secret OFF).
   mcpDefaults: defaultMcpDefaults(),
-  maxConcurrentWorkers: 4,
+  maxConcurrentWorkers: 3,
   workerIdleTimeoutMinutes: 20,
   integrations: [],
   defaultWorkerTokenCap: 0, // 0 = unlimited (human directive: NO per-worker cap)

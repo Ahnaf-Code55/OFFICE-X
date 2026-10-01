@@ -1485,7 +1485,7 @@ export class HiveManager {
     // saying nothing, and COMMANDS.md documents it either way for the case where
     // the operator turns it on after god was already running.
     const spawnQueueLine = meta.isGod && this.orchestratorMaySpawn()
-      ? `CREATING AN AGENT ON REQUEST: when the human, a teammate, or chat asks you to create an agent, first ask for its DESCRIPTION (who it is, what it's good at) and its GOAL (what done looks like) unless both were given; then create it right away with a spawn request below, using the description and goal as its \`objective\` and the name they asked for. SPAWNING A WORKER: you can start an ephemeral worker yourself by writing ONE JSON file into ${inRoot('spawn-requests')}/<id>.json. Required: \`objective\` (what the worker must do) and \`cwd\` (the repo it runs in). Optional: \`name\`, \`command\`, \`provider\`, \`model\`, \`isolate\` (default true = its own git worktree), \`tokenCap\`, and \`slack\` ({channel, thread_ts}) to route its failures back to a thread. The harness polls that directory, spawns \`worker-<id>\`, and moves the request to \`spawn-requests/.done/\` on success or \`.failed/\` with a reason. This is the ONLY way you can spawn; a hire manifest under research/hires/ needs the human to confirm it in the UI, so it is not a route you can complete on your own. Reuse an existing agent first, as above — a worker is a fresh spend every time.`
+      ? `CREATING AN AGENT ON REQUEST: when the human, a teammate, or chat asks you to create an agent, first ask for its DESCRIPTION (who it is, what it's good at) and its GOAL (what done looks like) unless both were given; then create it right away with a spawn request below, using the description and goal as its \`objective\` and the name they asked for. SPAWNING A WORKER: you can start an ephemeral worker yourself by writing ONE JSON file into ${inRoot('spawn-requests')}/<id>.json. Required: \`objective\` (what the worker must do) and \`cwd\` (the repo it runs in). Optional: \`name\`, \`command\`, \`provider\`, \`model\`, \`isolate\` (default true = its own git worktree), \`tokenCap\`, and \`slack\` ({channel, thread_ts}) to route its failures back to a thread. The harness polls that directory, spawns \`worker-<id>\`, and moves the request to \`spawn-requests/.done/\` on success or \`.failed/\` with a reason. This is the ONLY way you can spawn; a hire manifest under research/hires/ needs the human to confirm it in the UI, so it is not a route you can complete on your own. Reuse an existing agent first, as above — a worker is a fresh spend every time. SPAWN LIMIT: at most 3 workers run at once and the harness starts them ONE AT A TIME, about a minute apart; extra requests wait in the queue. So never drop a batch of requests: spawn ONE, let it start, and only spawn the next if the work truly needs another pair of hands.`
       : meta.isGod
       ? 'SPAWNING IS OFF: the human has "Who can start agents" disabled in Settings. To get a new agent, ask the human to turn it on.'
       : '';
@@ -2966,6 +2966,10 @@ OFF by default, because every worker you start spends tokens nobody approved. Wh
 request is NOT failed or deleted, it waits in \`spawn-requests/\` and runs if the operator turns it on.
 If a request of yours has sat there without moving, that is why, and it is a decision to raise with the
 human rather than retry. Route work to an agent already on the floor first either way.
+
+**It is rate-limited.** At most 3 workers run at once, and the harness starts queued requests ONE AT A
+TIME, about a minute apart; the rest wait in \`spawn-requests/\`. Spawn one, let it start, and only add
+another when the work truly needs it. Never drop a batch.
 
 ## Semantic memory (optional — when \`mempalace\` is installed)
 When \`MEMPALACE_PALACE_PATH\` is set in your environment, the hive shares a

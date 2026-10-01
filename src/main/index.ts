@@ -121,6 +121,7 @@ import {
   withCodexRemoteArgs
 } from '../shared/codexRemote';
 import { claudeAutoCompactEnv, withCodexAutoCompactArgs } from '../shared/autoCompact';
+import { maySpawnWorker, workerCap } from '../shared/workerSpawnPolicy';
 
 declare const __OFFICE_X_MANAGED_RELAY_MULTIADDR__: string;
 
@@ -6106,12 +6107,15 @@ async function gcPreservedWorktrees(): Promise<void> {
 /** One controller tick: (1) finish/reap live workers (frees slots), then (2) pull
  *  new requests up to the concurrency cap. Order matters so a freed slot is reused
  *  the same tick. */
+/** When the last queued spawn-request became a live worker (spacing, see workerSpawnPolicy). */
+let lastWorkerSpawnAt: number | null = null;
+
 async function ephemeralWorkerTick(): Promise<void> {
   if (workerTickRunning) return;
   workerTickRunning = true;
   try {
     const cfg = readConfig();
-    const maxWorkers = Math.max(1, cfg.maxConcurrentWorkers ?? 4);
+    const maxWorkers = workerCap(cfg.maxConcurrentWorkers);
     const idleTimeoutMs = Math.max(1, cfg.workerIdleTimeoutMinutes ?? 20) * 60_000;
     // Per-worker token cap. 0 = UNLIMITED (the default — wired but never throttles
     // unless a positive cap is set per-request or via defaultWorkerTokenCap).
@@ -6186,9 +6190,13 @@ async function ephemeralWorkerTick(): Promise<void> {
     if (dir && existsSync(dir)) {
       let files: string[] = [];
       try { files = readdirSync(dir).filter(f => f.endsWith('.json')).sort(); } catch { /* dir vanished */ }
-      for (const f of files) {
-        if (liveWorkers.size >= maxWorkers) break;
-        await processSpawnRequest(join(dir, f));
+      // ONE request per tick, and only once the previous worker is a gap old, so
+      // a burst of requests becomes workers one by one (workerSpawnPolicy).
+      const next = files[0];
+      if (next && maySpawnWorker({ live: liveWorkers.size, cap: maxWorkers, lastSpawnAt: lastWorkerSpawnAt, now: Date.now() })) {
+        const before = liveWorkers.size;
+        await processSpawnRequest(join(dir, next));
+        if (liveWorkers.size > before) lastWorkerSpawnAt = Date.now();
       }
     }
 
@@ -6267,7 +6275,7 @@ ipcMain.handle('workers:list', (): { live: WorkerSnapshot[]; preserved: Preserve
   const preserved: PreservedSnapshot[] = [...preservedWorktrees.values()].map((e) => ({
     workerId: e.workerId, wtPath: e.wtPath, baseBranch: e.baseBranch, preservedAt: e.preservedAt
   }));
-  return { live, preserved, maxWorkers: Math.max(1, cfg.maxConcurrentWorkers ?? 4) };
+  return { live, preserved, maxWorkers: workerCap(cfg.maxConcurrentWorkers) };
 });
 
 /** Manually stop a live ephemeral worker. Mirrors the done-release path: mark
