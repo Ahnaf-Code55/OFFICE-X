@@ -15,6 +15,7 @@ import {
   terminalReadyToReceive
 } from '../../../shared/providerAutomation';
 import { DEFAULT_CONTEXT_TRIGGER, type ContextRule } from '../../../shared/triggers';
+import { AUTO_COMPACT_TOKENS } from '../../../shared/autoCompact';
 import type { AgentProvider } from '../../../shared/agentProvider';
 import { bridgeOf, providerPreset } from '../../../shared/agentProvider';
 import { isDurableRole, preferredAgentRole, roleForHiveSpawn } from '../../../shared/agentRole';
@@ -263,8 +264,13 @@ function contextFillPct(a: Agent): number | null {
  * the very bug this replaces — a fleet that never compacts — only harder to
  * notice. An unmetered agent therefore falls back to time-only firing, which is
  * exactly the old behaviour and no worse.
+ *
+ * Compact also passes at AUTO_COMPACT_TOKENS absolute, whatever the percent:
+ * the platform-wide 150k compaction point, for CLIs that get no spawn-time knob
+ * (OpenCode, Gemini, …). Never for clear, which discards context.
  */
-function passesContextPressure(a: Agent, rule: ContextRule): boolean {
+function passesContextPressure(a: Agent, rule: ContextRule, action: 'compact' | 'clear'): boolean {
+  if (action === 'compact' && (a.contextTokens ?? 0) >= AUTO_COMPACT_TOKENS) return true;
   const large = (a.contextLimit ?? 0) >= LARGE_CONTEXT_WINDOW;
   const bar = large ? rule.minContextPctLargeWindow : rule.minContextPct;
   if (!(bar > 0)) return true;
@@ -1129,7 +1135,7 @@ export function useHive(config: HarnessConfig | null): void {
         // No trustworthy command for this CLI (Crush's palette-only TUI, Copilot's
         // print mode, an unknown custom binary) — leave its terminal alone.
         if (!command) continue;
-        if (!passesContextPressure(a, rule)) continue;
+        if (!passesContextPressure(a, rule, action)) continue;
         const verb = command.trimStart().split(/\s+/)[0];
         const queued = messageQueues[a.id] ?? [];
         if (queued.some((m) => m.text.trimStart().startsWith(verb))) continue;

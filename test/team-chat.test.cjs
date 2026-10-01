@@ -40,49 +40,48 @@ test('a max-size chat image still fits the sealed envelope limit', () => {
   assert.ok(Buffer.byteLength(JSON.stringify(envelope)) < MAX_TEAM_MESSAGE_BYTES);
 });
 
-test('agents hear the room, never their own reply, and stop after the AI turn cap', async () => {
+test('only @mentioned agents and the lead hear the room, and agent posts never fan out', async () => {
   const kv = new Map();
   const delivered = [];
   const chat = createChat({
     dir: fs.mkdtempSync(path.join(os.tmpdir(), 'chat-')),
     getKv: (k) => kv.get(k), setKv: (k, v) => kv.set(k, v),
-    myName: () => 'Me', agentName: (id) => ({ a: 'Claude', b: 'Codex' })[id],
+    myName: () => 'Me', agentName: (id) => ({ a: 'Claude', b: 'Codex', c: 'Gemini' })[id], agentIds: () => ['a', 'b', 'c'],
+    leadAgentId: () => 'a',
     deliverToAgent: (id) => delivered.push(id),
     sendToTeammates: async () => {}, emit: () => {}
   });
-  chat.setTier('a', 'leadership');
   chat.setTier('b', 'staff');
+  await chat.post('everyone', 'hello team', '');
+  assert.deepEqual(delivered.splice(0), ['a'], 'an un-mentioned human message wakes only the lead');
+  await chat.post('everyone', '@codex and @gemini check this', '');
+  assert.deepEqual(delivered.splice(0), ['b', 'c']);
+  chat.receiveAgent('a', 'on it, plan is ...');
+  assert.deepEqual(delivered.splice(0), [], 'an un-mentioned agent post wakes nobody');
+  chat.receiveAgent('a', '@codex take the tests');
+  assert.deepEqual(delivered.splice(0), ['b'], 'and a mention reaches only that agent');
+  chat.setTier('a', 'staff');
   await chat.post('leadership', 'board only', '');
-  assert.deepEqual(delivered.splice(0), ['a'], 'staff cannot hear #leadership');
-  await chat.post('everyone', 'hello', '');
-  assert.deepEqual(delivered.splice(0), ['a', 'b']);
-  chat.receiveAgent('a', 'hi from claude');
-  assert.deepEqual(delivered.splice(0), ['b']);
-  chat.receiveAgent('b', 'ack');
-  delivered.length = 0;
-  for (let i = 2; i < MAX_AI_TURNS; i++) chat.receiveAgent(i % 2 ? 'b' : 'a', `turn ${i}`);
-  delivered.length = 0;
-  chat.receiveAgent('b', 'one more');
-  assert.deepEqual(delivered, [], 'turn cap stops AI ping-pong');
-  chat.receiveAgent('zzz', 'not a participant');
-  assert.equal(chat.list().some((m) => m.text === 'not a participant'), false);
+  assert.deepEqual(delivered.splice(0), [], 'the lead must be able to hear the channel');
+  chat.setTier('c', 'off');
+  await chat.post('everyone', '@gemini you there?', '');
+  assert.deepEqual(delivered.splice(0), ['a'], 'a switched-off agent is never prompted; the lead picks it up');
 });
 
-test('every live agent hears #everyone by default until switched off', async () => {
+test('agent @mention ping-pong stops at the AI turn cap', () => {
   const kv = new Map();
   const delivered = [];
   const chat = createChat({
     dir: fs.mkdtempSync(path.join(os.tmpdir(), 'chat-')),
     getKv: (k) => kv.get(k), setKv: (k, v) => kv.set(k, v),
-    myName: () => 'Me', agentName: (id) => id, agentIds: () => ['a', 'b'],
+    myName: () => 'Me', agentName: (id) => ({ a: 'Claude', b: 'Codex' })[id], agentIds: () => ['a', 'b'],
     deliverToAgent: (id) => delivered.push(id),
     sendToTeammates: async () => {}, emit: () => {}
   });
-  await chat.post('everyone', 'all hands', '');
-  assert.deepEqual(delivered.splice(0), ['a', 'b']);
-  chat.setTier('b', 'off');
-  await chat.post('everyone', 'again', '');
-  assert.deepEqual(delivered, ['a']);
+  for (let i = 0; i < MAX_AI_TURNS + 3; i++) chat.receiveAgent(i % 2 ? 'b' : 'a', i % 2 ? '@claude yo' : '@codex yo');
+  assert.equal(delivered.length, MAX_AI_TURNS - 1, 'turn cap stops AI ping-pong');
+  chat.receiveAgent('zzz', 'not a participant');
+  assert.equal(chat.list().some((m) => m.text === 'not a participant'), false);
 });
 
 test('an @mention reaches only the named agent and tells it to reply', async () => {
@@ -92,13 +91,14 @@ test('an @mention reaches only the named agent and tells it to reply', async () 
     dir: fs.mkdtempSync(path.join(os.tmpdir(), 'chat-')),
     getKv: (k) => kv.get(k), setKv: (k, v) => kv.set(k, v),
     myName: () => 'Me', agentName: (id) => ({ a: 'Vanguard', b: 'Flux' })[id], agentIds: () => ['a', 'b'],
+    leadAgentId: () => 'a',
     deliverToAgent: (id, _s, body) => delivered.push([id, body.includes('You were @mentioned')]),
     sendToTeammates: async () => {}, emit: () => {}
   });
   await chat.post('everyone', 'yo @flux you dumbass 💀', '');
   assert.deepEqual(delivered.splice(0), [['b', true]]);
   await chat.post('everyone', 'morning all', '');
-  assert.deepEqual(delivered, [['a', false], ['b', false]]);
+  assert.deepEqual(delivered, [['a', false]]);
   assert.equal(mentions('hi @Flux!', 'Flux'), true);
   assert.equal(mentions('hi @Fluxy', 'Flux'), false);
   assert.equal(mentions('mail flux@x.com', 'Flux'), false);
@@ -125,7 +125,7 @@ test('task-request teammates reach the owner but never prompt local agents', () 
   const chat = createChat({
     dir: fs.mkdtempSync(path.join(os.tmpdir(), 'chat-')),
     getKv: (k) => kv.get(k), setKv: (k, v) => kv.set(k, v),
-    myName: () => 'Me', agentName: (id) => id, agentIds: () => ['a'],
+    myName: () => 'Me', agentName: (id) => id, agentIds: () => ['a'], leadAgentId: () => 'a',
     deliverToAgent: (id) => delivered.push(id),
     sendToTeammates: async () => {}, emit: (m) => emitted.push(m.text)
   });

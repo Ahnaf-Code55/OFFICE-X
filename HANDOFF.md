@@ -28,6 +28,7 @@ Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring 
 
 - 2026-10-01: remote `chat` from task-requests teammates no longer reaches local agents (`src/main/chat.ts`, `index.ts`; test in `test/team-chat.test.cjs`); voice download progress no longer double-emits (`voice/assets.ts`); stale `opencode-go/deepseek-flash` removed from `docs/model-catalog.json`. Focused suite 933/936: `proc-kill` fails only in containers without a zombie-reaping PID 1.
 - 2026-10-01: human-to-human calls: `rtc-signal` action (`teamProtocol.ts`, `teamActions.ts` parseRtcSignal, `teamDispatch.ts`), IPC `meeting:sendRtcSignal`/`meeting:rtcSignal`, renderer `meeting/useTeammateCall.ts` + call/accept buttons in `MeetingRoom.tsx`; tests `test/rtc-signal.test.cjs`. STUN only (no TURN), rings only while the meeting room is open; never tried with real audio.
+- 2026-10-01 usage fix: team chat no longer fans out (un-mentioned human msg → god only, @mentions → named only, agent posts → mentioned only, MAX_AI_TURNS 6); worker rule 1b "post plan to chat first" removed; god told to use the fewest agents. Defaults: Ponytail + new Caveman skill (`resources/skills/caveman`) always on via injected prompt rule 1e; auto-compact at 150k (`src/shared/autoCompact.ts`: Claude env pct, Codex `-c`, app trigger absolute floor). Headroom MCP was already default-on for Claude (needs `pip install "headroom-ai[mcp]"`).
 - Still missing from PLAN.md: image attach in MeetingRoom, per-AI voices, Phase 5 review notes.
 
 ## NEXT TASK

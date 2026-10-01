@@ -42,6 +42,8 @@ export interface ChatDeps {
   agentName: (agentId: string) => string | undefined;
   /** Live agents; any without a stored tier sit in #Everyone by default. */
   agentIds?: () => string[];
+  /** The orchestrator: the only agent an un-mentioned human message wakes. */
+  leadAgentId?: () => string | undefined;
   deliverToAgent: (agentId: string, subject: string, body: string) => void;
   sendToTeammates: (body: { channel: ChatChannel; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string }) => Promise<void>;
   emit: (message: ChatView) => void;
@@ -51,7 +53,7 @@ const LOG_KEY = 'chat:log';
 const TIERS_KEY = 'chat:tiers';
 const MAX_LOG = 200;
 /** AI messages allowed in a row before a human must speak again. */
-export const MAX_AI_TURNS = 12;
+export const MAX_AI_TURNS = 6;
 
 /** True when `text` @mentions `name` (case-insensitive, whole name). */
 export const mentions = (text: string, name: string): boolean =>
@@ -98,9 +100,12 @@ export function createChat(deps: ChatDeps) {
     if (promptAgents && turns < MAX_AI_TURNS) {
       const hearing = Object.entries(tiers()).filter(([agentId, tier]) =>
         agentId !== message.agentId && canHear(tier, message.channel) && deps.agentName(agentId));
-      // @Name picks who hears it; no mention means the whole channel.
+      // Every delivery is a paid agent turn, so never wake the whole room: @Name picks
+      // who answers; an un-mentioned human message goes to the lead agent alone, and
+      // an un-mentioned agent message wakes nobody.
       const named = hearing.filter(([agentId]) => mentions(message.text, deps.agentName(agentId)!));
-      for (const [agentId] of named.length ? named : hearing) {
+      const lead = message.authorKind === 'agent' ? [] : hearing.filter(([agentId]) => agentId === deps.leadAgentId?.());
+      for (const [agentId] of named.length ? named : lead) {
         replyChannel.set(agentId, message.channel);
         deps.deliverToAgent(agentId, `#${message.channel}: ${message.authorName}`, agentPrompt(message, named.length > 0));
       }
@@ -115,7 +120,8 @@ export function createChat(deps: ChatDeps) {
       '', 'Recent conversation (oldest first):', ...recent, '',
       mentioned
         ? 'You were @mentioned in it: reply.'
-        : 'If it is not for you and you have nothing useful to add (no help, no objection), do NOT reply.',
+        : 'You lead this chat. Answer it yourself, or @mention the ONE teammate best placed to; never @mention everyone. If nothing needs saying, do NOT reply.',
+      'Each reply costs the owner usage: reply once, keep it to a few lines, and only @mention a teammate when you need them to act.',
       `Reply like a human coworker would in a group chat: short, casual, lots of emojis, real emotion (happy, annoyed, sad, angry), friendly swearing and roasting welcome, in your own personality and current mood. Mention a teammate with @Name to talk to them directly. Whenever you talk to or answer ${deps.myName()} (the human boss), ALWAYS tag them as @${myHandle()}.`,
       'To reply, write ONE message JSON into your hive outbox with "to":"chat", "act":"inform", a short "subject", and your reply as "body".',
       'You may open any [image: path] above to see a screenshot.'

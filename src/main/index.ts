@@ -118,6 +118,7 @@ import {
   moveCodexAddDirArgsToServer,
   withCodexRemoteArgs
 } from '../shared/codexRemote';
+import { claudeAutoCompactEnv, withCodexAutoCompactArgs } from '../shared/autoCompact';
 
 declare const __OFFICE_X_MANAGED_RELAY_MULTIADDR__: string;
 
@@ -2952,6 +2953,15 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     }
     opts.args = args;
   }
+  // Platform default: compact at ~150k tokens (shared/autoCompact). After the
+  // model is resolved above (Claude's percent depends on its window) and BEFORE
+  // the codex resume reorder below, which keeps the pair ahead of the prompt.
+  // A per-agent env value / an explicit codex override always wins.
+  if (claudeProvider) {
+    opts.env = { ...claudeAutoCompactEnv(opts.args ?? [], opts.env), ...(opts.env ?? {}) };
+  } else if (provider === 'codex') {
+    opts.args = withCodexAutoCompactArgs(opts.args ?? []);
+  }
   // Idempotent session resume on respawn (#6.6a) — provider-aware: Claude
   // `--resume <sid>`, Grok `--resume <sid>`, Antigravity `--conversation <id>`.
   // The recorded session id comes from hook payloads, so
@@ -5054,7 +5064,8 @@ const chat = createChat({
     const agent = hive.registry().agents[agentId];
     return agent && !agent.archived ? agent.name : undefined;
   },
-  agentIds: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived).map(([id]) => id),
+  agentIds: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived && !a.isAssistant).map(([id]) => id),
+  leadAgentId: () => hive.registry().godId ?? undefined,
   // Same path as Slack: the renderer queues the prompt and types it once the agent is idle.
   deliverToAgent: (agentId, _subject, body) => {
     for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:agentPrompt', { agentId, text: body });

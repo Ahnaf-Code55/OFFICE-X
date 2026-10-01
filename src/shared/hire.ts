@@ -35,7 +35,9 @@ export const APP_PROTOCOL_SCHEME = 'officex';
 export const BUNDLED_SKILL_IDS: ReadonlySet<string> = new Set([
   'md-hive-sync',
   'md-fetch-summarize',
-  'md-audit'
+  'md-audit',
+  'ponytail',
+  'caveman'
 ]);
 
 /** Providers a manifest may request ('agy' is accepted as an alias for
