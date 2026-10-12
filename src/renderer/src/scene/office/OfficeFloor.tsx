@@ -2051,6 +2051,7 @@ export function OfficeFloor() {
         try {
           o3d = new Office3D(host, mapRenderer.getMap(), mapRenderer.getTilesetTextures(), (id) => useStore.getState().select(id), (x, y) => mapRenderer.isWalkable(x, y));
           app.canvas.style.display = 'none';
+          app.stage.renderable = false; // the 2D scene keeps simulating but stops drawing under the 3D view
           (app as any).__off3d = () => o3d?.dispose();
         } catch (err) { console.error('[OfficeFloor] 3D view failed, staying 2D', err); o3d = null; }
       }

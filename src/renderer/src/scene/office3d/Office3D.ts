@@ -82,6 +82,8 @@ export class Office3D {
   private disposables: Array<{ dispose(): void }> = [];
   private ro: ResizeObserver;
   private down = { x: 0, y: 0 };
+  private sinceRender = 0;
+  private renders = 0;
 
   constructor(
     private host: HTMLElement,
@@ -92,8 +94,9 @@ export class Office3D {
   ) {
     const W = map.width, H = map.height;
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.autoUpdate = false; // refreshed every other render in frame()
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const el = this.renderer.domElement;
     el.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;';
@@ -107,7 +110,7 @@ export class Office3D {
     sun.position.set(W / 2 - 14, 34, H / 2 + 20);
     sun.target.position.set(W / 2, 0, H / 2);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1536, 1536);
     const sc = sun.shadow.camera;
     sc.left = -38; sc.right = 38; sc.top = 30; sc.bottom = -30; sc.near = 1; sc.far = 120;
     sun.shadow.bias = -0.0004;
@@ -313,6 +316,11 @@ export class Office3D {
       if (seen.has(id)) continue;
       this.scene.remove(e.p.group); e.p.dispose(); e.tag.dispose(); this.people.delete(id);
     }
+    // ponytail: render at ~30fps and refresh shadows every 2nd render; people animate at 60 via update(dt).
+    this.sinceRender += dt;
+    if (this.sinceRender < 1 / 32) return;
+    this.sinceRender = 0;
+    this.renderer.shadowMap.needsUpdate = this.renders++ % 2 === 0;
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
