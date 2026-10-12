@@ -20,6 +20,13 @@ const {
 
 const autoConfig = { defaultCommand: 'claude', autoMode: true };
 
+test('manual Codex hires can write hive messages while retaining human approval', () => {
+  const command = buildSpawnCommand({ defaultCommand: 'claude', autoMode: false }, 'gpt-5.6-sol', 'codex');
+  assert.match(command, /-s workspace-write/);
+  assert.match(command, /-a on-request/);
+  assert.doesNotMatch(command, /never|dangerously/);
+});
+
 test('Kimi is a first-class inferred provider with autonomous defaults', () => {
   assert.equal(isAgentProvider('kimi'), true);
   assert.equal(inferAgentProvider('kimi --auto'), 'kimi');

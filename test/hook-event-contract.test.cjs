@@ -6,7 +6,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
-const { validateHookEvent } = loadTs('src/shared/hookEvents.ts');
+const { validateHookEvent, notificationNeedsHuman } = loadTs('src/shared/hookEvents.ts');
+
+test('worker permission requests remain blocked even without English prompt text', () => {
+  assert.equal(notificationNeedsHuman({ notificationType: 'permission_prompt', message: '' }), true);
+  assert.equal(notificationNeedsHuman({ notificationType: 'permission', message: 'waiting for input' }), true);
+  assert.equal(notificationNeedsHuman({ notificationType: 'elicitation_dialog', message: 'Bitte bestätigen' }), true);
+  assert.equal(notificationNeedsHuman({ message: 'Please approve this command' }), true);
+  assert.equal(notificationNeedsHuman({ notificationType: 'idle_prompt', message: 'waiting for input' }), false);
+  assert.equal(notificationNeedsHuman({ message: 'Claude is waiting for your input' }), false);
+});
 
 test('accepts valid hook event payloads', () => {
   assert.equal(validateHookEvent({

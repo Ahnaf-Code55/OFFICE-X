@@ -13,6 +13,7 @@ import { homedir } from 'node:os';
 import { request as httpsRequest } from 'node:https';
 import { PtyManager, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, isSafeCommandName } from './shellEnv';
+import { prepareCodexRemoteHome } from './codexRemoteHome';
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
@@ -195,6 +196,10 @@ async function enableCodexRemoteForSpawn(
   if (process.platform === 'win32') return false;
   const realHome = opts.env?.CODEX_HOME;
   if (!realHome) return false;
+  if (!prepareCodexRemoteHome(realHome)) {
+    console.warn('[codex-remote] filesystem cannot secure the control socket; starting local TUI');
+    return false;
+  }
   try {
     const alias = codexRemoteAliasPath(realHome, agentId);
     // Bail before touching the filesystem if even the short alias would exceed
