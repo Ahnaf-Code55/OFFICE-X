@@ -10,6 +10,7 @@ import { freeflowRecorder, useFreeflow } from '@/freeflow/recorder';
 import { useTerminalFontSize } from './terminalFontSize';
 import { isComposingKey } from '@shared/imeGuard';
 import { useRtl } from '@/i18n/useDirection';
+import { EditAgentModal } from './EditAgentModal';
 
 const EMPTY_QUEUE: QueuedMessage[] = [];
 
@@ -23,6 +24,7 @@ interface Attachment {
 
 export interface MessageQueueComposerProps {
   agent: Agent;
+  workspace?: boolean;
 }
 
 /**
@@ -30,7 +32,7 @@ export interface MessageQueueComposerProps {
  * messages park in a per-agent queue and are submitted to the agent's Claude
  * TUI one-by-one as soon as it goes idle (see useHive's flush loop).
  */
-export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
+export function MessageQueueComposer({ agent, workspace = false }: MessageQueueComposerProps) {
   const { t } = useTranslation();
   const rtl = useRtl();
   const queue = useStore((s) => s.messageQueues[agent.id]) ?? EMPTY_QUEUE;
@@ -198,6 +200,7 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
 
   return (
     <div
+      className={workspace ? 'aw-composer' : undefined}
       onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
       onDragLeave={(e) => {
         // Only clear when the cursor actually leaves the composer, not on child enter.
@@ -217,6 +220,7 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
       }}>
       {dragOver && (
         <span style={{
+          // The workspace has a compact composer; pending queue controls remain visible.
           fontFamily: 'var(--cth-font-display)', fontSize: 9, lineHeight: '12px',
           color: 'var(--cth-ink-700)', textAlign: 'center'
         }}>{t('queueComposer.dropToAttach')}</span>
@@ -227,7 +231,7 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
           fontFamily: 'var(--cth-font-display)',
           fontSize: 9, lineHeight: '12px',
           color: 'var(--cth-ink-700)'
-        }}>{t('queueComposer.queue')}</span>
+        }} className={workspace ? 'aw-composer-label' : undefined}>{workspace ? (queue.length ? 'Queued messages' : 'Message') : t('queueComposer.queue')}</span>
         {queue.length > 0 && (
           <span style={{
             fontSize: 11, padding: '1px 6px 0',
@@ -361,8 +365,9 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKey}
           onPaste={onPaste}
-          rows={5}
-          placeholder={idle ? t('queueComposer.messagePlaceholder', { name: agent.name }) : t('queueComposer.busyPlaceholder', { name: agent.name })}
+          rows={workspace ? 2 : 5}
+          aria-label={`Message ${agent.name}`}
+          placeholder={workspace ? `Message ${agent.name}…` : idle ? t('queueComposer.messagePlaceholder', { name: agent.name }) : t('queueComposer.busyPlaceholder', { name: agent.name })}
           style={{
             width: '100%',
             resize: 'vertical',
@@ -370,7 +375,7 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
             // buttons) instead of a hardcoded 13px. On a large display the
             // terminal text scaled up while this box stayed tiny; box height is
             // derived from the same size so the visible line count is stable.
-            minHeight: composerLineHeight * 5 + 14,
+            minHeight: workspace ? 42 : composerLineHeight * 5 + 14,
             maxHeight: composerLineHeight * 18,
             padding: '6px 8px',
             background: 'var(--cth-paper-100)',
@@ -389,25 +394,48 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
             narrow sidebar wraps the buttons onto a second row instead of
             pushing Send off-screen. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, rowGap: 6, flexWrap: 'wrap', minWidth: 0 }}>
-          <span style={{ flex: 1 }} />
+          {!workspace && <span style={{ flex: 1 }} />}
           <PixelButton variant="secondary" size="sm" onClick={pickFiles}>
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
               <Icon name="plus" /> {t('queueComposer.files')}
             </span>
           </PixelButton>
           {freeflowEnabled && <FreeFlowButton agentId={agent.id} hasGroqKey={hasGroqKey} />}
+          {workspace && <WorkspaceComposerOptions agent={agent} />}
           {!idle && <PixelButton variant="secondary" size="sm" onClick={steerIt} disabled={!text.trim()} title={t('agentControl.steerTip')}>
             {t('agentControl.steer')}
           </PixelButton>}
-          <PixelButton variant="primary" size="sm" onClick={queueIt} disabled={!canSend}>
+          {workspace ? <button className="aw-send-button" onClick={queueIt} disabled={!canSend}
+            aria-label={idle ? `Send to ${agent.name}` : `Queue for ${agent.name}`} title={idle ? 'Send message' : 'Queue until this agent can receive it'}>
+              <span style={{ transform: 'rotate(-90deg)', display: 'flex' }}><Icon name="arrow-right" /></span>
+            </button> : <PixelButton variant="primary" size="sm" onClick={queueIt} disabled={!canSend}>
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
               {t('commandBar.send')} <Icon name="arrow-right" />
             </span>
-          </PixelButton>
+          </PixelButton>}
         </div>
       </div>
     </div>
   );
+}
+
+/** Model editing follows the existing restart semantics; this is not a live switch. */
+function WorkspaceComposerOptions({ agent }: { agent: Agent }) {
+  const [edit, setEdit] = useState(false);
+  const [autoMode, setAutoMode] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void window.cth.getConfig().then(c => { if (alive) setAutoMode(c.autoMode); }).catch(() => {});
+    const off = window.cth.onConfigChanged(c => setAutoMode(c.autoMode));
+    return () => { alive = false; off(); };
+  }, []);
+  return <>
+    <button className="aw-model-chip" onClick={() => setEdit(true)} title="Edit model — changes apply on the next restart">
+      {agent.model || 'CLI default'} <span>⌄</span>
+    </button>
+    <span className="aw-approvals"><i data-auto={autoMode ?? undefined} />{autoMode === null ? 'Checking…' : autoMode ? 'Auto mode on' : 'Approvals on'}</span>
+    {edit && <EditAgentModal agent={agent} onClose={() => setEdit(false)} />}
+  </>;
 }
 
 /** Poll the pty's automation block while there is something waiting on it. The

@@ -21,7 +21,8 @@ import { bridgeOf, providerPreset } from '../../../shared/agentProvider';
 import { isDurableRole, preferredAgentRole, roleForHiveSpawn } from '../../../shared/agentRole';
 import { inboxNudgeText } from '../../../shared/hiveNudge';
 import { resolveGodName } from '../../../shared/godIdentity';
-import { acquireTerminal, resetTerminal, isTerminalAutomationSafe } from '@/components/terminalPool';
+import { notificationNeedsHuman } from '../../../shared/hookEvents';
+import { acquireTerminal, resetTerminal, isTerminalAutomationSafe, hasTerminalPermissionPrompt } from '@/components/terminalPool';
 import { canDeliverToAgent, deliverWithAcknowledgement, checkPrecondition } from './queueDelivery';
 import { OFFICE_CAST, DEFAULT_CHARACTER } from '@/scene/office/cast';
 
@@ -32,7 +33,6 @@ const GOD_ID = 'god';
 const SPAWN_ACCENTS = ['coral', 'mint', 'sky', 'lemon', 'lilac', 'peach'] as const;
 const GOD_PTY = `pty-${GOD_ID}`;
 
-const REMOTE_CONTROL_SETTLE_MS = 1500;
 // Provider-agnostic PTY-quiescence idle fallback (#2e). A non-Claude bridge that
 // fires a 'working' event but never its turn-end signal (Stop / session.idle /
 // agent_end) would pin the agent 'working' forever → the idle-only inbox-wake nudge
@@ -79,7 +79,7 @@ const INITIAL_GOD_PROMPT = [
   '2. Review board.md + tasks.json and the current roster of agents (active vs archived).',
   '3. Check fleet health: read fleet.json in the hive root for every agent\'s live tokens, cost, status, breaker level, and inbox backlog (`claude agents` will NOT show your hive\'s agents). Flag anyone stalled, over-budget, or breaker-armed.',
   '4. Skim COMMANDS.md (hive root) for the Claude Code commands you can use — and run `mempalace wake-up` for a memory digest if the CLI is available.',
-  'Then begin orchestrating: triage requests, delegate work to the team, and keep everyone unblocked. You are fully autonomous — there is no approval queue, so handle tool-permission prompts in this session yourself (the human can approve them remotely from their phone).'
+  'Then triage the human requests, assign each task to a suitable existing agent, and report the owner and result back to the human. Native tool-permission prompts belong to the human: ask clearly and wait for their decision; never approve your own prompt or tell a worker to bypass it. With no assigned work, remain available instead of inventing tasks.'
 ].join('\n');
 
 // Per-pty submission chain. Every submitToPty for a given pty is appended here so
@@ -136,6 +136,7 @@ function submitToPty(
   const prev = writeChains.get(ptyId) ?? Promise.resolve();
   const next = prev.catch(() => { /* a failed prior write must not stall the chain */ }).then(async () => {
     await waitForTerminalReady(ptyId, provider);
+    if (!isTerminalAutomationSafe(ptyId)) throw new Error('Terminal input is waiting for the human.');
     // Bracketed paste (ESC[200~ … ESC[201~) only matters for MULTI-LINE text, so a
     // stray "\n" doesn't submit early (#24). Single-line text (nudges, slash
     // commands) is sent raw — some TUIs (Antigravity's agy) treat the paste
@@ -153,6 +154,7 @@ function submitToPty(
     const wrote = await window.cth.writePty(ptyId, payload);
     if (!wrote?.ok) throw new Error(wrote?.error ?? `pty write failed: ${ptyId}`);
     await new Promise((r) => setTimeout(r, codex ? 400 : 140));
+    if (hasTerminalPermissionPrompt(ptyId)) throw new Error('A permission prompt appeared before submit.');
     const submitted = await window.cth.writePty(ptyId, '\r');
     if (!submitted?.ok) throw new Error(submitted?.error ?? `pty write failed: ${ptyId}`);
     await new Promise((r) => setTimeout(r, settleMs));
@@ -451,35 +453,17 @@ export function useHive(config: HarnessConfig | null): void {
       useStore.getState().addAgent(god);
       useStore.getState().setGodStatus('ready');
 
-      // Kick Michael off once his TUI is up. Always re-enable remote control so
-      // the human can approve permission prompts from their phone (best-effort — a
-      // failed/unknown slash command just prints to his terminal and is harmless).
-      // Then, ONLY on a genuinely fresh spawn, hand him the orientation prompt —
-      // a RESUMED Michael already has his full context and must not be re-oriented
-      // mid-thread (that would reset the floor's situational awareness). Both go
-      // through the per-pty submit chain, so they're strictly sequential and can't
-      // jam together; the boot-grace window keeps the inbox-wake/drain loops off
-      // Michael until he's settled. The live-PTY branch above skips this entirely.
+      // Queue startup through the normal delivery path so folder trust, native
+      // approvals and user drafts also guard the first Enter. Resumed sessions
+      // retain their context and do not receive a fresh orientation message.
       const resumedGod = res.resumed === true;
       bootGraceUntil.current[GOD_ID] = Date.now() + BOOT_GRACE_MS;
-      void (async () => {
-        try {
-          const remoteCommand = remoteControlCommandForProvider(godProvider, godName);
-          if (remoteCommand) {
-            // settleMs pauses the chain ~1.5s after /remote-control before the
-            // orientation prompt (fresh spawns only) is submitted next.
-            await submitToPty(GOD_PTY, remoteCommand, godProvider, REMOTE_CONTROL_SETTLE_MS);
-          }
-          if (!cancelled && !resumedGod) {
-            // A type-into-tui god (Crush) can't ride its hive protocol on argv, so the
-            // main process hands it back as seedPrompt — type it FIRST (identity), then
-            // the orientation kick. Serialized via writeChains so they can't jam. (ondev-b)
-            if (res.seedPrompt) await submitToPty(GOD_PTY, res.seedPrompt, godProvider);
-            await submitToPty(GOD_PTY, INITIAL_GOD_PROMPT, godProvider);
-          }
-        } catch { /* PTY may have died during startup */ }
-        finally { bootGraceUntil.current[GOD_ID] = 0; }
-      })();
+      const remoteCommand = remoteControlCommandForProvider(godProvider, godName);
+      if (remoteCommand) useStore.getState().enqueueMessage(GOD_ID, remoteCommand);
+      if (!cancelled && !resumedGod) {
+        if (res.seedPrompt) useStore.getState().enqueueMessage(GOD_ID, res.seedPrompt);
+        useStore.getState().enqueueMessage(GOD_ID, INITIAL_GOD_PROMPT);
+      }
     }, 1200);
     return () => { cancelled = true; clearTimeout(t); };
   }, [config?.onboardingComplete, config?.harnessHome]);
@@ -537,19 +521,9 @@ export function useHive(config: HarnessConfig | null): void {
         // Only (1) is a real "needs you". Treating (2) as blocked made Michael
         // march to the door with a red "!" right after finishing, so detect the
         // idle case and let him linger on the floor instead.
-        const msg = (e.message ?? '').toLowerCase();
-        const idleWaiting = !msg
-          || msg.includes('waiting for your input')
-          || msg.includes('is idle')
-          || msg.includes('waiting for input');
-        const needsHuman = msg.includes('permission')
-          || msg.includes('approve')
-          || msg.includes('confirm')
-          || msg.includes('needs your');
-        if (needsHuman && !idleWaiting) {
-          // Only the god agent escalates to the human; sub-agents are autonomous
-          // and read as "waiting" (parked on god, not on you).
-          updateAgent(e.agentId, { status: self.isGod ? 'blocked' : 'waiting' });
+        if (notificationNeedsHuman(e)) {
+          // Native approval belongs to the human for every agent, including workers.
+          updateAgent(e.agentId, { status: 'blocked', action: 'needs your permission', carrying: undefined });
         } else {
           // Idle notification — responded, nothing to do. Linger, don't flag.
           updateAgent(e.agentId, { status: 'idle', action: 'idle', carrying: undefined });
@@ -685,7 +659,19 @@ export function useHive(config: HarnessConfig | null): void {
       const now = Date.now();
       const { agents, updateAgent } = useStore.getState();
       for (const a of agents) {
-        if (!a.ptyId || a.status !== 'working') continue;
+        if (!a.ptyId) continue;
+        if (hasTerminalPermissionPrompt(a.ptyId)) {
+          if (a.action !== 'permission prompt in terminal') updateAgent(a.id, {
+            status: 'blocked', action: 'permission prompt in terminal',
+            blockReason: { summary: 'Permission required', detail: 'Open this agent’s terminal to review its folder trust or tool request. Automatic messages are paused until you decide.', actions: [] }
+          });
+          continue;
+        }
+        if (a.action === 'permission prompt in terminal') {
+          updateAgent(a.id, { status: 'idle', action: 'idle', blockReason: undefined });
+          continue;
+        }
+        if (a.status !== 'working') continue;
         // Never fight the breaker pin (a constrained/stopped agent stays 'looping')
         // or a still-booting agent (its boot sequence is mid-type).
         const bl = breakerLevel.current[a.id];
@@ -783,7 +769,7 @@ export function useHive(config: HarnessConfig | null): void {
           // (killed mid-boot), don't type into its orphaned pty at all.
           const live = useStore.getState().agents.find((x) => x.id === a.id);
           if (!live) return;
-          if (live.status === 'waiting' || live.status === 'blocked') {
+          if (live.status === 'waiting' || live.status === 'blocked' || !isTerminalAutomationSafe(ptyId)) {
             seeded.current.delete(a.id);
             useStore.getState().updateAgent(a.id, { seedPrompt: seed });
             return;

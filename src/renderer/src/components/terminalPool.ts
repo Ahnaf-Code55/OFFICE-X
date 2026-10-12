@@ -33,6 +33,7 @@ import {
 } from './terminalRecovery';
 import {
   canAutomateTerminal,
+  hasNativePermissionPrompt,
   opensInteractiveTerminalUi,
   shouldFollowTerminalOutput,
   terminalAutomationBlock,
@@ -404,7 +405,18 @@ export function acquireTerminal(ptyId: string, theme?: ThemeMap, fontSize = 14):
 export function isTerminalAutomationSafe(ptyId: string, now = Date.now()): boolean {
   const entry = pool.get(ptyId);
   if (!entry) return true;
-  return canAutomateTerminal(automationStateOf(entry, now), now);
+  return !hasTerminalPermissionPrompt(ptyId) && canAutomateTerminal(automationStateOf(entry, now), now);
+}
+
+export function hasTerminalPermissionPrompt(ptyId: string): boolean {
+  const entry = pool.get(ptyId);
+  if (!entry || entry.exited) return false;
+  const buffer = entry.term.buffer.active;
+  const lines: string[] = [];
+  for (let i = buffer.baseY; i < buffer.baseY + entry.term.rows; i++) {
+    lines.push(buffer.getLine(i)?.translateToString(true) ?? '');
+  }
+  return hasNativePermissionPrompt(lines.join('\n'));
 }
 
 /** Characters a TUI paints around its input line that are not the user's text:

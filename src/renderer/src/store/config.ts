@@ -435,5 +435,8 @@ export function buildSpawnCommand(
   // bypassPermissions, Codex's dangerous bypass, Grok's always-approve, Kimi's
   // auto, or agy's skip flag.
   if (config.autoMode && preset.autoFlag) cmd = `${cmd} ${preset.autoFlag}`;
+  // Hive messages need writable coordination roots even when approvals stay on.
+  // Do not inherit a user's read-only global Codex setting for a working office.
+  if (!config.autoMode && provider === 'codex') cmd = `${cmd} -a on-request -s workspace-write`;
   return cmd;
 }

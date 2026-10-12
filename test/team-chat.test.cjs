@@ -14,6 +14,29 @@ const member = { memberId: 'device-friend', displayName: 'Friend', controlLevel:
 const chatMessage = (body) => ({ id: 'm1', officeId: 'o', senderId: 'device-friend', recipientId: 'me', action: 'chat', body, issuedAt: 1, expiresAt: 2 });
 const parse = (body) => parseTeamAction({ message: chatMessage(body), member, targets: [], hasTerminal: () => false });
 
+test('a fresh office routes Leadership and Managers requests to its lead and returns the answer', async () => {
+  const kv = new Map(), delivered = [], emitted = [];
+  const chat = createChat({
+    dir: fs.mkdtempSync(path.join(os.tmpdir(), 'chat-fresh-')),
+    getKv: k => kv.get(k), setKv: (k, v) => kv.set(k, v),
+    myName: () => 'Turjo', agentName: id => ({ god: 'Michael-B', forge: 'Forge' })[id],
+    agentIds: () => ['god', 'forge'], leadAgentId: () => 'god',
+    deliverToAgent: (id, subject, body) => delivered.push({ id, body }),
+    sendToTeammates: async () => {}, emit: m => emitted.push(m)
+  });
+  for (const channel of ['leadership', 'managers']) {
+    await chat.post(channel, 'Please coordinate this task', '');
+    assert.equal(delivered.at(-1)?.id, 'god');
+    chat.receiveAgent('god', '@Turjo I am assigning an owner.');
+    assert.equal(emitted.at(-1).authorKind, 'agent');
+    assert.equal(emitted.at(-1).channel, channel);
+  }
+  chat.setTier('god', 'off');
+  const count = delivered.length;
+  await chat.post('leadership', 'Explicitly disabled lead stays disabled', '');
+  assert.equal(delivered.length, count);
+});
+
 test('chat is allowed at every access level and parses a valid body', () => {
   for (const level of ['task-requests', 'delegated', 'full-control']) assert.equal(isPeerActionAllowed(level, 'chat'), true);
   assert.deepEqual(parse({ channel: 'everyone', text: ' hi ', image: '', authorKind: 'human', authorName: 'Friend' }),

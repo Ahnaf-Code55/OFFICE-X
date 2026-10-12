@@ -347,7 +347,7 @@ interface State {
   reconcileWithLivePtys: (livePtyIds: string[]) => void;
 }
 
-const LS_SIDEBAR_WIDTH = 'cth.sidebarWidth';
+const LS_SIDEBAR_WIDTH = 'cth.agentWorkspaceWidth';
 const LS_SIDEBAR_TAB = 'cth.sidebarTab';
 const LS_AGENTS = 'cth.agents';
 const LS_ARCHIVED = 'cth.archivedAgents';
@@ -621,9 +621,9 @@ const initialSidebarWidth = (() => {
   try {
     const v = window.localStorage.getItem(LS_SIDEBAR_WIDTH);
     const n = v ? parseInt(v, 10) : NaN;
-    if (!Number.isNaN(n) && n >= 320 && n <= 1200) return n;
+    if (!Number.isNaN(n) && n >= 320 && n <= 2000) return n;
   } catch { /* noop */ }
-  return 420;
+  return Math.min(2000, Math.max(480, Math.round(window.innerWidth * 0.54)));
 })();
 const initialSidebarTab: SidebarTab = (() => {
   try {
@@ -1030,7 +1030,7 @@ export const useStore = create<State>((set, get) => ({
   setIdeOpen: (open, agentId) => set({ ideOpen: open, ideAgentId: open ? (agentId ?? null) : null }),
   setIdeInitialFile: (path) => set({ ideInitialFile: path }),
   setSidebarWidth: (px) => {
-    const clamped = Math.min(1200, Math.max(320, Math.round(px)));
+    const clamped = Math.min(2000, Math.max(320, Math.round(px)));
     try { window.localStorage.setItem(LS_SIDEBAR_WIDTH, String(clamped)); } catch { /* noop */ }
     set({ sidebarWidth: clamped });
   },

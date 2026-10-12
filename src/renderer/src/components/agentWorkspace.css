@@ -1,0 +1,96 @@
+/* Scoped to the right workspace. Floor assets and global design tokens stay intact. */
+.agent-workspace {
+  --aw-surface: #ffffff; --aw-sidebar: #f5f5f4; --aw-input: #f8f8f7;
+  --aw-text: #202124; --aw-muted: #60646c; --aw-line: #dedfdf;
+  --aw-selected: #fff0c8; --aw-selected-text: #553900; --aw-notice: #fff5dc;
+  --cth-cream-50: var(--aw-surface); --cth-cream-100: var(--aw-surface);
+  --cth-cream-200: var(--aw-sidebar); --cth-cream-300: var(--aw-line);
+  --cth-paper-100: var(--aw-input); --cth-paper-200: var(--aw-sidebar);
+  --cth-ink-900: var(--aw-text); --cth-ink-700: var(--aw-text);
+  --cth-ink-500: var(--aw-muted); --cth-ink-300: var(--aw-line);
+  --cth-font-display: var(--cth-font-ui);
+  display: flex; flex: 1; min-height: 0; min-width: 0; height: 100%;
+  background: var(--aw-surface); color: var(--aw-text); font-family: var(--cth-font-ui);
+  border: 1px solid var(--aw-line); border-radius: 10px; overflow: hidden;
+  container-type: inline-size;
+}
+[data-cth-theme="dark"] .agent-workspace {
+  --aw-surface: #17191c; --aw-sidebar: #202327; --aw-input: #282c31;
+  --aw-text: #eceef0; --aw-muted: #a6adb7; --aw-line: #373c44;
+  --aw-selected: #3c3524; --aw-selected-text: #f8d789; --aw-notice: #342b1d;
+}
+.agent-workspace button, .agent-workspace select { font: inherit; color: inherit; }
+.agent-workspace button { cursor: pointer; }
+.agent-workspace button:disabled { cursor: default; opacity: .5; }
+.agent-workspace button:focus-visible, .agent-workspace select:focus-visible { outline: 2px solid #dcae49; outline-offset: 2px; }
+.aw-sidebar { width: 178px; flex-shrink: 0; min-height: 0; display: flex; flex-direction: column; padding: 14px 10px 10px; background: var(--aw-sidebar); border-inline-end: 1px solid var(--aw-line); }
+.aw-identity { display: flex; gap: 9px; align-items: center; min-width: 0; margin-bottom: 12px; }
+.aw-portrait { width: 32px; height: 42px; flex-shrink: 0; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+.aw-identity > div:last-child { min-width: 0; }
+.aw-identity strong { font-size: 13px; display: block; overflow-wrap: anywhere; }
+.aw-identity span { display: block; margin-top: 3px; font-size: 11px; color: var(--aw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-new-chat { flex-shrink: 0; display: flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--aw-line); border-radius: 6px; padding: 7px 9px; font-size: 12px !important; text-align: start; }
+.aw-navigation { flex: 1; min-height: 0; overflow-y: auto; margin: 10px -2px; padding: 0 2px; scrollbar-width: thin; }
+.aw-nav-group + .aw-nav-group { border-top: 1px solid var(--aw-line); margin-top: 10px; padding-top: 9px; }
+.aw-nav-group h2, .aw-nav-group summary { font-size: 10px; font-weight: 500; color: var(--aw-muted); margin: 0; padding: 4px 8px; text-transform: uppercase; letter-spacing: .06em; }
+.aw-nav-group summary { cursor: pointer; }
+.aw-nav-group button { width: 100%; display: flex; align-items: center; gap: 9px; border: 0; background: transparent; border-radius: 5px; padding: 5px 8px; min-height: 29px; text-align: start; font-size: 12px; }
+.aw-nav-group button:hover { background: var(--aw-input); }
+.aw-nav-group button[aria-current="page"] { background: var(--aw-selected); color: var(--aw-selected-text); box-shadow: inset 2px 0 0 #e5b94f; }
+.aw-agent-select { display: grid; gap: 5px; font-size: 10px; color: var(--aw-muted); }
+.aw-agent-select select { width: 100%; padding: 7px; background: var(--aw-input); border: 1px solid var(--aw-line); border-radius: 5px; font-size: 12px; color: var(--aw-text); }
+.aw-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.aw-header { display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding: 12px 14px; min-height: 58px; }
+.aw-header-identity { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.aw-header-identity > canvas { flex-shrink: 0; }
+.aw-header-identity > div { min-width: 0; }
+.aw-header strong { font-size: 14px; overflow-wrap: anywhere; }
+.aw-header-identity span { display: block; font-size: 11px; color: var(--aw-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 150px; }
+.aw-header-actions { margin-inline-start: auto; display: flex; align-items: center; gap: 5px; }
+.aw-header-actions button { display: flex; gap: 5px; align-items: center; white-space: nowrap; padding: 6px 8px; border: 1px solid var(--aw-line); border-radius: 6px; background: transparent; font-size: 11px; }
+.aw-header-actions .aw-icon-button { width: 29px; height: 29px; padding: 0; justify-content: center; }
+.aw-status > span { font-size: 11px !important; border-radius: 5px; box-shadow: none !important; padding: 4px 7px !important; }
+.aw-status[data-status="blocked"] > span { background: #f5ce75 !important; color: #392706 !important; }
+.aw-permission { flex-shrink: 0; display: flex; align-items: center; gap: 10px; margin: 0 14px 8px; padding: 10px 12px; background: var(--aw-notice); border: 1px solid #d7ab474a; border-radius: 7px; font-size: 12px; }
+.aw-permission > div { flex: 1; min-width: 0; }
+.aw-permission strong, .aw-permission span { display: block; }
+.aw-permission span { color: var(--aw-muted); font-size: 11px; margin-top: 3px; overflow-wrap: anywhere; }
+.aw-permission button { border: 0; background: transparent; text-decoration: underline; font-size: 11px; padding: 3px; }
+.aw-content { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.aw-chat-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; }
+.aw-chat-empty h2 { font-size: 21px; font-weight: 600; margin: 0; }
+.aw-chat-empty p { font-size: 13px; color: var(--aw-muted); margin: 0; line-height: 1.6; max-width: 360px; }
+.aw-agent-dock { flex-shrink: 0; display: flex; gap: 5px; padding: 0 14px 8px; overflow-x: auto; scrollbar-width: thin; }
+.aw-agent-dock button { display: flex; align-items: center; gap: 5px; flex-shrink: 0; border: 1px solid var(--aw-line); border-radius: 5px; background: transparent; padding: 4px 6px; font-size: 10px; }
+.aw-agent-dock button[aria-pressed="true"] { background: var(--aw-selected); border-color: #dcae49; }
+.aw-utility { flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 14px 10px; font-size: 10px; color: var(--aw-muted); }
+.aw-utility button { display: flex; align-items: center; gap: 5px; border: 0; background: transparent; padding: 2px 0; font-size: 10px; }
+.aw-utility button:first-child { margin-inline-end: auto; }
+.aw-approvals { display: inline-flex; gap: 5px; align-items: center; }
+.aw-approvals i { width: 6px; height: 6px; background: #959ba5; border-radius: 50%; }
+.aw-approvals i[data-auto="false"] { background: #65b58a; }
+.aw-approvals i[data-auto="true"] { background: #e6b957; }
+.aw-composer { margin: 12px 14px; border: 1px solid var(--aw-line); border-top-color: var(--aw-line) !important; border-radius: 15px; background: var(--aw-input) !important; padding: 10px 12px !important; }
+.aw-composer textarea.cth-input { background: transparent !important; box-shadow: none !important; border-radius: 0; font-family: var(--cth-font-ui) !important; }
+.aw-composer .aw-composer-label { font-size: 10px !important; color: var(--aw-muted) !important; }
+.aw-composer button { border-radius: 5px; }
+.aw-composer .aw-send-button { border-radius: 50%; width: 30px; height: 30px; padding: 0; border: 0; background: var(--aw-text); color: var(--aw-surface); display: grid; place-items: center; }
+.aw-composer .aw-send-button svg path { fill: currentColor; }
+.aw-composer .aw-model-chip { margin-inline-start: auto; font-size: 10px; padding: 4px 6px; border: 1px solid var(--aw-line); background: transparent; border-radius: 5px; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-composer .aw-approvals { font-size: 10px; color: var(--aw-muted); }
+@container (max-width: 760px) {
+  .aw-sidebar { width: 154px; padding-inline: 8px; }
+  .aw-header { flex-wrap: wrap; gap: 7px; padding: 10px; }
+  .aw-header-identity { flex: 1; }
+  .aw-header-actions { width: 100%; justify-content: flex-end; }
+  .aw-permission { margin-inline: 10px; }
+}
+@container (max-width: 480px) {
+  .aw-sidebar { width: 124px; }
+  .aw-identity { gap: 5px; }
+  .aw-identity .aw-portrait { display: none; }
+  .aw-nav-group button { gap: 5px; padding-inline: 5px; }
+  .aw-header-identity span { max-width: 100px; }
+  .aw-composer { margin: 8px !important; }
+  .aw-utility { gap: 6px; padding-inline: 8px; }
+}

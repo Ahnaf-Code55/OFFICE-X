@@ -66,7 +66,9 @@ test('strings about ONE agent interpolate {{name}}, not the orchestrator', () =>
 
 test('every per-agent string has a call site that actually passes a name', () => {
   const src = read('src/renderer/src/components/CommandCenterPanel.tsx');
-  for (const k of ['commandCenter.runsTheFloor', 'commandCenter.noTerminal',
+  // The new workspace displays the selected identity directly; the old
+  // runsTheFloor subtitle is no longer rendered.
+  for (const k of ['commandCenter.noTerminal',
                    'commandCenter.confirmRestartEngine', 'commandCenter.restartContinueTitle']) {
     const call = new RegExp(`t\\('${k.replace('.', '\\.')}',\\s*\\{[^}]*name:`);
     assert.match(src, call, `${k} is used without passing a name`);

@@ -26,6 +26,15 @@ const loadTs = require('./load-ts.cjs');
 
 const { argsWithAutoModeFlag } = loadTs('src/shared/agentProvider.ts');
 
+test('manual Codex worker spawns and legacy restores keep hive writes and human approvals', () => {
+  assert.deepEqual(argsWithAutoModeFlag(['--model', 'gpt-5.6-sol'], false, 'codex'),
+    ['--model', 'gpt-5.6-sol', '-a', 'on-request', '-s', 'workspace-write']);
+  const explicit = ['--sandbox=read-only', '--ask-for-approval=untrusted'];
+  assert.deepEqual(argsWithAutoModeFlag(explicit, false, 'codex'), explicit);
+  const gui = ['-a', 'on-request', '-s', 'workspace-write'];
+  assert.deepEqual(argsWithAutoModeFlag(gui, false, 'codex'), gui);
+});
+
 test('a main-only spawn (ephemeral worker, voice hire) gets the bypass flag when autoMode is on', () => {
   assert.deepEqual(
     argsWithAutoModeFlag([], true, 'claude'),

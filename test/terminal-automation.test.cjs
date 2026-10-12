@@ -6,6 +6,7 @@ const loadTs = require('./load-ts.cjs');
 
 const {
   canAutomateTerminal,
+  hasNativePermissionPrompt,
   isStaleTerminalDraft,
   opensInteractiveTerminalUi,
   shouldFollowTerminalOutput,
@@ -14,6 +15,14 @@ const {
   STALE_INPUT_MS,
   STALE_PICKER_MS
 } = loadTs('src/renderer/src/components/terminalAutomation.ts');
+
+test('first-run folder trust and tool approvals stop automated Enter before hooks are available', () => {
+  assert.equal(hasNativePermissionPrompt('Folder access\n  Trust this folder? Codex can read, edit, and run files here.\n› 1. Trust and continue'), true);
+  assert.equal(hasNativePermissionPrompt('Accessing workspace:\nDo you trust the contents of this project?\n> Yes, I trust this folder'), true);
+  assert.equal(hasNativePermissionPrompt('Would you like to run the following command?\n  $ rm file'), true);
+  assert.equal(hasNativePermissionPrompt('• I reviewed the permissions.\n› Ask Codex to do anything'), false);
+  assert.equal(hasNativePermissionPrompt('The documentation explains "Trust this folder?" in the CLI.'), false);
+});
 
 test('interactive provider commands pause queue automation', () => {
   assert.equal(opensInteractiveTerminalUi('/model'), true);

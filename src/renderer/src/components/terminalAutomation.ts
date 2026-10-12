@@ -18,6 +18,12 @@ const INTERACTIVE_COMMANDS = new Set([
   '/sessions'
 ]);
 
+/** First-run trust dialogs appear before hooks are installed. Their Enter key
+ * must never be supplied by an automated prompt or inbox nudge. */
+export function hasNativePermissionPrompt(screen: string): boolean {
+  return /^\s*(?:Trust this folder\?|Do you trust the contents of this project\?|Would you like to run\b|Do you want to (?:run|allow|approve|proceed)\b)/im.test(screen);
+}
+
 export function opensInteractiveTerminalUi(input: string): boolean {
   // Only a BARE command opens a picker. `/model` prompts you to choose;
   // `/model sonnet` applies the argument and returns to the prompt with no UI
