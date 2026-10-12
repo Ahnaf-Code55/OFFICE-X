@@ -88,6 +88,7 @@ interface Runtime {
 /** A guest avatar is presentation only. It intentionally has no Agent, store
  *  selection callback, local seat lifecycle hooks, or terminal association. */
 interface RemoteRuntime {
+  charName: string;
   character: Character;
   label: Text;
   seatIndex: number;
@@ -218,6 +219,16 @@ export function OfficeFloor() {
   // Optional 3D view of the same simulation (the 2D scene keeps running underneath).
   const [view3d, setView3d] = useState(() => {
     try { return window.localStorage.getItem('officex.view3d') === '1'; } catch { return false; }
+  });
+  const [quality3d, setQuality3d] = useState<'high' | 'low'>(() => {
+    try { return window.localStorage.getItem('officex.view3dQuality') === 'low' ? 'low' : 'high'; } catch { return 'high'; }
+  });
+  const quality3dRef = useRef(quality3d);
+  quality3dRef.current = quality3d;
+  const toggleQuality3d = () => setQuality3d((q) => {
+    const next = q === 'high' ? 'low' : 'high';
+    try { window.localStorage.setItem('officex.view3dQuality', next); } catch { /* disabled storage */ }
+    return next;
   });
   const toggle3d = () => setView3d((v) => {
     try { window.localStorage.setItem('officex.view3d', v ? '0' : '1'); } catch { /* disabled storage */ }
@@ -1895,7 +1906,7 @@ export function OfficeFloor() {
         label.anchor.set(0.5, 1);
         label.eventMode = 'none';
         charLayer.addChild(label);
-        const runtime: RemoteRuntime = { character, label, seatIndex, status: 'idle' };
+        const runtime: RemoteRuntime = { charName: currentAgent.character, character, label, seatIndex, status: 'idle' };
         remoteRuntimes.set(id, runtime);
         applyRemoteState(currentAgent, runtime);
       };
@@ -2055,8 +2066,10 @@ export function OfficeFloor() {
           (app as any).__off3d = () => o3d?.dispose();
         } catch (err) { console.error('[OfficeFloor] 3D view failed, staying 2D', err); o3d = null; }
       }
+      let appliedQuality: 'high' | 'low' | null = null;
       const tick3d = (ticker: Ticker) => {
         if (!o3d) return;
+        if (appliedQuality !== quality3dRef.current) { appliedQuality = quality3dRef.current; o3d.setQuality(appliedQuality); }
         const list: Person3DState[] = [];
         const agents = useStore.getState().agents;
         for (const rt of runtimes.values()) {
@@ -2064,7 +2077,13 @@ export function OfficeFloor() {
           const p = c.getPixelPosition();
           const a = agents.find((q) => q.id === c.agentId);
           const dot = a?.status === 'typing' || a?.status === 'compacting' || a?.status === 'looping' ? '#34d399' : a?.status === 'waiting' ? '#fbbf24' : '#9aa3ad';
-          list.push({ id: c.agentId, name: rt.charName, x: p.x, y: p.y, anim: c.getAnimation(), dir: c.getFacing(), sitting: c.isSitting(), visible: c.isVisible, label: a?.name ?? rt.charName, dot });
+          list.push({ id: c.agentId, name: rt.charName, x: p.x, y: p.y, anim: c.getAnimation(), dir: c.getFacing(), sitting: c.isSitting(), visible: c.isVisible, label: a?.name ?? rt.charName, dot, thought: c.getThought(), glyph: c.getStatusGlyph() });
+        }
+        for (const rt of remoteRuntimes.values()) {
+          const c = rt.character;
+          const p = c.getPixelPosition();
+          const dot = rt.status === 'typing' || rt.status === 'compacting' || rt.status === 'looping' ? '#34d399' : rt.status === 'waiting' ? '#fbbf24' : '#9aa3ad';
+          list.push({ id: c.agentId, name: rt.charName, x: p.x, y: p.y, anim: c.getAnimation(), dir: c.getFacing(), sitting: c.isSitting(), visible: c.isVisible, label: rt.label.text || rt.charName, dot, remote: true, thought: c.getThought(), glyph: c.getStatusGlyph() });
         }
         o3d.frame(list, ticker.deltaMS / 1000);
       };
@@ -2182,6 +2201,15 @@ export function OfficeFloor() {
             }}>
             {view3d ? '3D' : '2D'}
           </button>
+          {view3d && (
+            <button type="button" aria-label="Toggle 3D quality" onClick={toggleQuality3d}
+              style={{
+                border: '1px solid #9bb7c6', padding: '4px 6px', cursor: 'pointer',
+                background: '#263e50', color: '#f4eddc', fontFamily: 'inherit', fontSize: 'inherit'
+              }}>
+              {quality3d === 'high' ? 'HQ' : 'LQ'}
+            </button>
+          )}
           {selectedAgent && floorForAgent(selectedAgent) !== viewFloor && (
             <button type="button" aria-label={`Move ${selectedAgent.name} to floor ${viewFloor}`}
               onClick={() => useStore.getState().updateAgent(selectedAgent.id, { floor: viewFloor })}

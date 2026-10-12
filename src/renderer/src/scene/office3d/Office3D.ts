@@ -9,6 +9,9 @@ import type { OfficeCharacterName } from '../office/cast';
 import { personLook } from '../office/portraitArt';
 import { Person3D } from './Person3D';
 import { NameTag3D } from './NameTag3D';
+import { ThoughtBubble3D } from './ThoughtBubble3D';
+import { planFurniture, type FurnitureItem } from './FurniturePlanner';
+import { buildFurniture, disposeFurniture } from './Furniture3D';
 
 const FLIP_H = 0x80000000, FLIP_V = 0x40000000, FLIP_D = 0x20000000, ID_MASK = 0x1fffffff;
 const SRC_SCALE = 3;        // canvas pixels per source pixel for the baked layer textures
@@ -26,10 +29,13 @@ export interface Person3DState {
   visible: boolean;
   label: string;             // name tag text
   dot?: string;              // status dot colour (CSS)
+  remote?: boolean;          // a Shared Office teammate's agent: drawn, but not selectable
+  thought?: { text: string; tool?: string; visible: boolean };
+  glyph?: 'none' | 'blocked' | 'success' | 'compacting' | 'looping';
 }
 
 /** Draw one Tiled tile layer into a canvas (gid flip flags honoured). */
-function bakeLayers(map: TiledMap, textures: Texture[], names: string[]): HTMLCanvasElement {
+function bakeLayers(map: TiledMap, textures: Texture[], names: string[], skip?: Set<number>): HTMLCanvasElement {
   const tw = map.tilewidth, th = map.tileheight;
   const c = document.createElement('canvas');
   c.width = map.width * tw * SRC_SCALE; c.height = map.height * th * SRC_SCALE;
@@ -42,6 +48,7 @@ function bakeLayers(map: TiledMap, textures: Texture[], names: string[]): HTMLCa
       const raw = layer.data[i] >>> 0;
       const id = raw & ID_MASK;
       if (!id) continue;
+      if (skip && name.startsWith('furniture') && skip.has(i)) continue; // replaced by a 3D model
       let ti = -1;
       for (let k = map.tilesets.length - 1; k >= 0; k--) if (id >= map.tilesets[k].firstgid) { ti = k; break; }
       if (ti < 0) continue;
@@ -72,16 +79,53 @@ function pixelTexture(c: HTMLCanvasElement, renderer: THREE.WebGLRenderer): THRE
   return t;
 }
 
+/** Average opaque colour of one tileset tile, cached by gid. */
+function makeAvgColor(map: TiledMap, textures: Texture[]): (gid: number) => [number, number, number] | undefined {
+  const cache = new Map<number, [number, number, number] | undefined>();
+  const probe = document.createElement('canvas');
+  const pctx = probe.getContext('2d', { willReadFrequently: true })!;
+  return (raw) => {
+    const id = raw & ID_MASK;
+    if (cache.has(id)) return cache.get(id);
+    let out: [number, number, number] | undefined;
+    for (let k = map.tilesets.length - 1; k >= 0 && !out; k--) {
+      const ts = map.tilesets[k];
+      if (id < ts.firstgid) continue;
+      const img = (textures[k]?.source as unknown as { resource?: CanvasImageSource })?.resource;
+      if (!img) break;
+      const cols = ts.columns ?? 16, tw = ts.tilewidth ?? map.tilewidth, th = ts.tileheight ?? map.tileheight, local = id - ts.firstgid;
+      probe.width = tw; probe.height = th;
+      pctx.clearRect(0, 0, tw, th);
+      pctx.drawImage(img, (local % cols) * tw, Math.floor(local / cols) * th, tw, th, 0, 0, tw, th);
+      const d = pctx.getImageData(0, 0, tw, th).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+      if (n) out = [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+      break;
+    }
+    cache.set(id, out);
+    return out;
+  };
+}
+
 export class Office3D {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
-  private people = new Map<string, { p: Person3D; name: string; tag: NameTag3D }>();
+  private people = new Map<string, { p: Person3D; name: string; tag: NameTag3D; bubble: ThoughtBubble3D }>();
   private ray = new THREE.Raycaster();
   private disposables: Array<{ dispose(): void }> = [];
   private ro: ResizeObserver;
   private down = { x: 0, y: 0 };
+  private sun!: THREE.DirectionalLight;
+  private furniture: THREE.Group[] = [];
+  private userMoved = false;
+  private mapW = 0;
+  private mapH = 0;
+  private home = { pos: new THREE.Vector3(), target: new THREE.Vector3() };
+  private fly: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  private frameGap = 1 / 32;
   private sinceRender = 0;
   private renders = 0;
 
@@ -110,14 +154,21 @@ export class Office3D {
     sun.position.set(W / 2 - 14, 34, H / 2 + 20);
     sun.target.position.set(W / 2, 0, H / 2);
     sun.castShadow = true;
+    this.sun = sun;
     sun.shadow.mapSize.set(1536, 1536);
     const sc = sun.shadow.camera;
     sc.left = -38; sc.right = 38; sc.top = 30; sc.bottom = -30; sc.near = 1; sc.far = 120;
     sun.shadow.bias = -0.0004;
     this.scene.add(sun, sun.target);
 
-    // ground: floor + furniture art baked flat, so the 3D floor matches the 2D map
-    const groundTex = pixelTexture(bakeLayers(map, textures, ['floor', 'furniture-below', 'furniture-above']), this.renderer);
+    // plan real 3D furniture; tiles it covers are left out of the flat ground art and of the generic blocks
+    let items: FurnitureItem[] = [];
+    try { items = planFurniture(map, isWalkable, makeAvgColor(map, textures)); } catch (err) { console.error('[Office3D] furniture planning failed', err); }
+    const covered = new Set<number>();
+    for (const it of items) for (const [tx, ty] of it.tiles) covered.add(ty * W + tx);
+
+    // ground: floor + remaining furniture art baked flat, so the 3D floor matches the 2D map
+    const groundTex = pixelTexture(bakeLayers(map, textures, ['floor', 'furniture-below', 'furniture-above'], covered), this.renderer);
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(W, H),
       new THREE.MeshStandardMaterial({ map: groundTex, color: 0xfff0dc, roughness: 0.95 }),
@@ -136,7 +187,13 @@ export class Office3D {
     this.disposables.push(slab.geometry, slab.material as THREE.Material);
 
     this.buildWalls(map, textures);
-    this.buildFurniture(map, textures, isWalkable);
+    this.buildFurniture(map, textures, isWalkable, covered);
+    for (const it of items) {
+      const g = buildFurniture(it);
+      g.position.set(it.x, 0, it.z);
+      this.scene.add(g);
+      this.furniture.push(g);
+    }
 
     this.camera = new THREE.PerspectiveCamera(36, 1, 0.5, 300);
     this.camera.position.set(W / 2, 38, H / 2 + 27);
@@ -149,10 +206,13 @@ export class Office3D {
 
     el.addEventListener('pointerdown', this.onDown);
     el.addEventListener('pointerup', this.onUp);
+    el.addEventListener('dblclick', this.onDbl);
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(host);
     this.resize();
+    this.mapW = W; this.mapH = H;
     this.fitCamera(W, H);
+    this.controls.addEventListener('start', () => { this.userMoved = true; });
   }
 
   /** Extrude every wall-layer tile into a low block: tile art on top, plaster on the sides. */
@@ -203,9 +263,9 @@ export class Office3D {
   }
 
   /** Blocking furniture tiles become low blocks: art on top, the art's average colour on the sides. */
-  private buildFurniture(map: TiledMap, textures: Texture[], isWalkable: (x: number, y: number) => boolean): void {
+  private buildFurniture(map: TiledMap, textures: Texture[], isWalkable: (x: number, y: number) => boolean, covered: Set<number>): void {
     const W = map.width, H = map.height;
-    const art = bakeLayers(map, textures, ['furniture-below', 'furniture-above']);
+    const art = bakeLayers(map, textures, ['furniture-below', 'furniture-above'], covered);
     const actx = art.getContext('2d', { willReadFrequently: true })!;
     const topTex = pixelTexture(art, this.renderer);
     topTex.premultiplyAlpha = false;
@@ -217,7 +277,7 @@ export class Office3D {
     const topPos: number[] = [], topUv: number[] = [];
     const sidePos: number[] = [], sideCol: number[] = [];
     const quad = (pos: number[], q: number[][]) => { for (const i of [0, 1, 2, 0, 2, 3]) pos.push(...q[i]); };
-    const solid = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && gid('furniture-below', x, y) && !isWalkable(x, y);
+    const solid = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && !covered.has(y * W + x) && gid('furniture-below', x, y) && !isWalkable(x, y);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       if (!solid(x, y)) continue;
       // average opaque colour of the tile (furniture-above on top of it included)
@@ -268,13 +328,27 @@ export class Office3D {
     const polar = 0.88;
     this.camera.position.set(W / 2, d * Math.cos(polar), H / 2 + d * Math.sin(polar));
     this.controls.update();
+    this.home.pos.copy(this.camera.position);
+    this.home.target.copy(this.controls.target);
   }
+
+  /** Low = cheaper machines: no shadows, 1x pixels, ~20fps. */
+  setQuality(q: 'high' | 'low'): void {
+    this.sun.castShadow = q === 'high';
+    this.renderer.setPixelRatio(q === 'high' ? Math.min(window.devicePixelRatio || 1, 1.5) : 1);
+    this.frameGap = q === 'high' ? 1 / 32 : 1 / 21;
+    this.resize();
+  }
+
+  /** Double-click empty floor: fly back to the starting view. */
+  private onDbl = () => { this.fly = { pos: this.home.pos.clone(), target: this.home.target.clone() }; };
 
   private resize(): void {
     const w = this.host.clientWidth || 800, h = this.host.clientHeight || 600;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    if (!this.userMoved && this.mapW) this.fitCamera(this.mapW, this.mapH);
   }
 
   private onDown = (e: PointerEvent) => { this.down = { x: e.clientX, y: e.clientY }; };
@@ -286,7 +360,13 @@ export class Office3D {
     for (const hit of hits) {
       let o: THREE.Object3D | null = hit.object;
       while (o && o.userData.agentId === undefined) o = o.parent;
-      if (o) { this.onSelect(o.userData.agentId as string); return; }
+      if (o) {
+        if (!o.userData.remote) this.onSelect(o.userData.agentId as string);
+        const t = o.position.clone().setY(1);
+        const off = this.camera.position.clone().sub(this.controls.target).setLength(Math.min(22, this.camera.position.distanceTo(this.controls.target)));
+        this.fly = { pos: t.clone().add(off), target: t };
+        return;
+      }
     }
   };
 
@@ -297,28 +377,39 @@ export class Office3D {
       seen.add(s.id);
       let e = this.people.get(s.id);
       if (!e || e.name !== s.name) {
-        if (e) { this.scene.remove(e.p.group); e.p.dispose(); e.tag.dispose(); }
+        if (e) { this.scene.remove(e.p.group); e.p.dispose(); e.tag.dispose(); e.bubble.dispose(); }
         const p = new Person3D(personLook(s.name as OfficeCharacterName));
         p.group.userData.agentId = s.id;
+        p.group.userData.remote = !!s.remote;
         const tag = new NameTag3D();
         p.group.add(tag.sprite);
+        const bubble = new ThoughtBubble3D();
+        bubble.sprite.scale.multiplyScalar(0.5);
+        p.group.add(bubble.sprite);
         this.scene.add(p.group);
-        e = { p, name: s.name, tag };
+        e = { p, name: s.name, tag, bubble };
         this.people.set(s.id, e);
       }
       e.p.group.visible = s.visible;
       e.tag.set(s.label, s.dot);
+      if (s.visible && s.thought?.visible) e.bubble.show(s.thought.text, s.thought.tool, s.glyph); else e.bubble.hide();
+      e.bubble.update(dt);
       e.p.group.position.set(s.x / 16, 0, s.y / 16);
       e.p.setPose(s.sitting && s.anim === 'idle' ? 'sit' : s.sitting && s.anim === 'walk' ? 'sit' : s.anim, s.dir);
       e.p.update(dt);
     }
     for (const [id, e] of this.people) {
       if (seen.has(id)) continue;
-      this.scene.remove(e.p.group); e.p.dispose(); e.tag.dispose(); this.people.delete(id);
+      this.scene.remove(e.p.group); e.p.dispose(); e.tag.dispose(); e.bubble.dispose(); this.people.delete(id);
     }
     // ponytail: render at ~30fps and refresh shadows every 2nd render; people animate at 60 via update(dt).
     this.sinceRender += dt;
-    if (this.sinceRender < 1 / 32) return;
+    if (this.sinceRender < this.frameGap) return;
+    if (this.fly) {
+      const k = 1 - Math.exp(-this.sinceRender * 7);
+      this.camera.position.lerp(this.fly.pos, k); this.controls.target.lerp(this.fly.target, k);
+      if (this.camera.position.distanceTo(this.fly.pos) < 0.05) this.fly = null;
+    }
     this.sinceRender = 0;
     this.renderer.shadowMap.needsUpdate = this.renders++ % 2 === 0;
     this.controls.update();
@@ -330,8 +421,10 @@ export class Office3D {
     const el = this.renderer.domElement;
     el.removeEventListener('pointerdown', this.onDown);
     el.removeEventListener('pointerup', this.onUp);
+    el.removeEventListener('dblclick', this.onDbl);
     this.controls.dispose();
-    for (const e of this.people.values()) { e.p.dispose(); e.tag.dispose(); }
+    for (const e of this.people.values()) { e.p.dispose(); e.tag.dispose(); e.bubble.dispose(); }
+    for (const g of this.furniture) disposeFurniture(g);
     this.people.clear();
     for (const d of this.disposables) d.dispose();
     this.renderer.dispose();
