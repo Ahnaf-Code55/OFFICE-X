@@ -168,6 +168,7 @@ export class Character {
   }
 
   getAnimation(): CharacterAnimation { return this.state; }
+  getFacing(): Direction { return this.direction; }
   getDeskTile(): { x: number; y: number } { return this.deskTile; }
   getPixelPosition(): { x: number; y: number } { return { x: this.px, y: this.py }; }
 

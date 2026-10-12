@@ -81,6 +81,9 @@ export class TiledMapRenderer {
   }
 
   getContainer(): Container { return this.rootContainer; }
+  /** Raw map + tileset textures, for the optional 3D view. */
+  getMap(): TiledMap { return this.mapData; }
+  getTilesetTextures(): Texture[] { return this.tilesetTextures; }
   getCharacterContainer(): Container { return this.characterContainer; }
 
   isWalkable(tx: number, ty: number): boolean {
