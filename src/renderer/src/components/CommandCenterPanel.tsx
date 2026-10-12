@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { AgentWorkspaceFrame, type WorkspaceDestination } from './AgentWorkspaceFrame';
+import { GitTab } from './GitTab';
+import { ThreadsPanel } from './ThreadsPanel';
+import { ToolWaterfall } from './ToolWaterfall';
+import { AgentControlStrip } from './AgentControlStrip';
+import { AgentStrip } from './AgentStrip';
 import { useTranslation } from 'react-i18next';
-import { PixelPanel } from './PixelPanel';
 import { PixelBadge } from './PixelBadge';
 import { PixelButton } from './PixelButton';
 import { SpritePortrait } from './SpritePortrait';
@@ -41,15 +46,13 @@ import { canReceiveInbox } from '@shared/agentProvider';
 import { isComposingKey } from '@shared/imeGuard';
 import { useRtl } from '@/i18n/useDirection';
 
-/** Michael's control surface. Shown instead of the plain terminal/files panel
- *  when the god agent is selected: terminal + queue, the floor roster (with
- *  per-agent model + dispatch + assistant access), a memory view, and a live
- *  activity feed / board / usage meter. */
+/** Universal agent workspace. Session views follow the selected agent;
+ * office destinations retain their shared data and behavior. */
 
 // Both the AskMe (#human) tab and the Triggers tab live here. Triggers replaced
 // the old Schedules tab: schedules are now one of four trigger types, and the
 // whole surface lives in ./triggers (see src/shared/triggers.ts for the contract).
-type CCTab = 'terminal' | 'chat' | 'meeting' | 'floor' | 'tasks' | 'human' | 'triggers' | 'trigger-history'
+type CCTab = 'conversation' | 'git' | 'messages' | 'traces' | 'controls' | 'roster' | 'terminal' | 'chat' | 'meeting' | 'floor' | 'tasks' | 'human' | 'triggers' | 'trigger-history'
   | 'memory' | 'graph' | 'activity' | 'skills' | 'workers';
 
 /** Fallback denominator for the per-agent token meter when no floor token budget
@@ -90,12 +93,8 @@ const TABS: { key: CCTab; labelKey: string; icon: Parameters<typeof Icon>[0]['na
  *  cols/rows and corrupt the display. */
 export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent; fullscreen?: boolean }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<CCTab>('terminal');
-  // Chat (Claude-Code-app style) or the raw TUI. The pty stays mounted under the chat.
-  const [chatView, setChatView] = useState(() => { try { return localStorage.getItem('cth.chatView') !== '0'; } catch { return true; } });
-  // Only engines whose transcripts we read get the app-style view; the rest keep their TUI.
-  const chatTheme = (agent.provider ?? 'claude') === 'claude' ? 'claude' : agent.provider === 'codex' ? 'codex' : null;
-  const toggleChatView = () => setChatView((v) => { try { localStorage.setItem('cth.chatView', v ? '0' : '1'); } catch { /* ignore */ } return !v; });
+  const [tab, setTab] = useState<CCTab>('conversation');
+  const chatTheme = agent.provider === 'codex' ? 'codex' : 'claude';
   // The trigger-history ledger has nothing to say until an outside party can
   // reach us, so its tab appears only once an org key or a webhook exists. This
   // is the first config-gated tab in the panel: TABS stays the canonical order
@@ -108,6 +107,18 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
     if (!showHistory && tab === 'trigger-history') setTab('terminal');
   }, [showHistory, tab]);
   const visibleTabs = TABS.filter((t) => t.key !== 'trigger-history' || showHistory);
+  const destinations: WorkspaceDestination[] = [
+    { key: 'conversation', label: 'Chat', icon: 'web', group: 'agent' },
+    ...visibleTabs.filter(d => ['terminal', 'tasks', 'human', 'floor', 'memory', 'skills', 'activity'].includes(d.key))
+      .map(d => ({ key: d.key, label: t(d.labelKey), icon: d.icon, group: 'agent' as const })),
+    ...visibleTabs.filter(d => ['chat', 'meeting', 'triggers', 'trigger-history', 'graph', 'workers'].includes(d.key))
+      .map(d => ({ key: d.key, label: t(d.labelKey), icon: d.icon, group: 'office' as const })),
+    { key: 'git', label: t('sidebar.git'), icon: 'git', group: 'more' },
+    { key: 'messages', label: t('sidebar.messages'), icon: 'bell', group: 'more' },
+    { key: 'traces', label: t('sidebar.traces'), icon: 'web', group: 'more' },
+    { key: 'controls', label: 'Agent controls', icon: 'gear', group: 'more' },
+    { key: 'roster', label: 'Arrange agents', icon: 'mcp', group: 'more' }
+  ];
 
   // External tab requests (the office task board → 'tasks', the boss-room
   // calendar → 'triggers'). seq-keyed so clicking again re-opens the tab even
@@ -159,209 +170,69 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
   };
 
   return (
-    <PixelPanel
-      variant="default"
-      noPadding
-      style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0, overflow: 'hidden' }}
-    >
-      {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '6px 8px', background: 'var(--cth-cream-100)',
-        borderBottom: '1px solid var(--cth-ink-700)', flexShrink: 0
-      }}>
-        <div style={{
-          width: 32, height: 32, background: `var(--cth-${agent.accent}-light)`,
-          boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
-          display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden', flexShrink: 0
-        }}>
-          <SpritePortrait character={agent.character} scale={1} />
-        </div>
-        {/* Title + subtitle truncate; the control cluster never shrinks. At
-            sidebar width the old header wrapped its 24-char display-font title
-            onto three lines and "runs the floor" word-per-line under the two
-            wide buttons — everything here is single-line by construction. */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '14px', color: 'var(--cth-ink-900)',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-          }}>{t('commandCenter.title')}</div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 1, minWidth: 0 }}>
-            <PixelBadge status={agent.status} />
-            <span style={{
-              fontSize: 12, color: 'var(--cth-ink-500)',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-            }}>{t('commandCenter.runsTheFloor', { name: agent.name })}</span>
+    <AgentWorkspaceFrame agent={agent} destinations={destinations} current={tab}
+      onNavigate={key => setTab(key as CCTab)} fullscreen={fullscreen}>
+      {/* Keep one terminal mounted across navigation. It receives hooks and owns
+          native approvals even when the transcript is shown over it. Never mount
+          a second xterm while the focus overlay owns this PTY. */}
+      <div style={{ flex: 1, minHeight: 0, display: tab === 'conversation' || tab === 'terminal' ? 'flex' : 'none', flexDirection: 'column' }}>
+        {isFullscreenedHere ? <Centered>{t('commandCenter.terminalFullscreen')}</Centered> : <>
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', position: 'relative' }}>
+            {agent.ptyId && <PtyTerminalView
+              key={terminalInstanceKey(agent.ptyId, agent.terminalGeneration)} ptyId={agent.ptyId}
+              onStreamData={onPtyStream}
+              onUserPrompt={text => {
+                updateAgent(agent.id, { lastPrompt: text });
+                if (text.trim().toLowerCase() === '/clear' || text.trim().toLowerCase() === '/new') {
+                  updateAgent(agent.id, { contextTokens: 0, contextLimit: undefined, progress: 0 });
+                }
+                void window.cth.historyAdd({ agentId: agent.id, cwd: agent.cwd, text });
+              }}
+              onToggleFullscreen={() => setFullscreen(fullscreen ? null : agent.id)}
+              fullscreen={fullscreen} embedded={!fullscreen}
+            />}
+            {tab === 'conversation' && <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex' }}>
+              <AgentChatView key={agent.id} agentId={agent.id} agent={agent}
+                busy={agent.status === 'working' || agent.status === 'thinking'} theme={chatTheme}
+                onOpenTerminal={() => setTab('terminal')} />
+            </div>}
+            {tab === 'terminal' && !agent.ptyId && <Centered>{t('commandCenter.noTerminal', { name: agent.name })}</Centered>}
           </div>
-        </div>
-        {/* v0.3.4: floor-wide auto-delivery lives HERE (one switch for every
-            agent's queue), and the IDE opens from agent level, not the toolbar.
-            Short labels — the tooltips carry the full explanation. */}
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-          <PixelButton
-            variant={floorDeliveryPaused ? 'primary' : 'secondary'}
-            size="sm"
-            onClick={() => { void toggleFloorDelivery(); }}
-          >
-            <span
-              className="cth-tip cth-tip-wrap"
-              data-tip={floorDeliveryPaused
-                ? t('commandCenter.deliveryPausedTitle')
-                : t('commandCenter.deliveryOnTitle')}
-              aria-label={floorDeliveryPaused
-                ? t('commandCenter.deliveryResumeAria')
-                : t('commandCenter.deliveryHoldAria')}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-            >
-              <Icon name={floorDeliveryPaused ? 'pause' : 'play'} />
-              {floorDeliveryPaused ? t('commandCenter.deliveryPaused') : t('commandCenter.deliveryAuto')}
-            </span>
-          </PixelButton>
-          {/* Floor-level surface with no agent of its own: the honest target is
-              whoever is selected, stated explicitly rather than left to the
-              IDE's fallback so the intent is visible at the call site. */}
-          <PixelButton variant="secondary" size="sm" onClick={() => {
-            const s = useStore.getState();
-            s.setIdeOpen(true, s.selectedId);
-          }}>
-            <span
-              className="cth-tip cth-tip-wrap"
-              data-tip={t('commandCenter.ideTitle')}
-              aria-label={t('commandCenter.openIdeAria')}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-            >
-              <Icon name="code" /> {t('commandCenter.ide')}
-            </span>
-          </PixelButton>
-        </div>
+          <MessageQueueComposer key={agent.id} agent={agent} workspace />
+        </>}
       </div>
-
-      {/* Tab bar — ONE row, tabs at their natural width, scrolling only if the
-          panel is genuinely too narrow for all of them.
-
-          This was an auto-fit grid of equal-width cells, which had a failure mode
-          the equal widths caused: every column is sized to the WIDEST tab, so the
-          track count is set by the longest label rather than by the total width
-          the labels actually need. Adding a 12th tab tipped it over at fullscreen
-          width and dropped `setup` onto a second row with most of the first row's
-          space still unused — the tabs need ~1320px of content and had ~1610px.
-
-          Content-sized tabs fit all twelve on one line with room to spare, and the
-          `.cth-tabbar` rules in global.css (scrollbar-width: none, ::-webkit-
-          scrollbar { height: 0 }) already exist for exactly this: a single row that
-          scrolls with the scrollbar hidden. The grid never scrolled, so those rules
-          have been dead code since it landed.
-
-          Trade-off, deliberate: in the NARROW docked panel the far-right tabs now
-          scroll out of view instead of wrapping to a visible second row. One row
-          that sometimes needs a scroll beats two rows where one is nearly empty —
-          and the grid's own reason for existing (keeping wrapped rows aligned)
-          stops applying the moment there is only ever one row. */}
-      <div className="cth-tabbar" style={{
-        display: 'flex', gap: 4,
-        // Docked in the sidebar the panel is narrow, so tabs WRAP: a second row
-        // costs a few pixels of a tall column, while a horizontal scroll there
-        // would hide half the tabs behind a gesture with no affordance.
-        // In focus mode the panel is wide and vertical space is the scarce
-        // resource, so it stays ONE row and scrolls instead. `.cth-tabbar` in
-        // global.css already hides that scrollbar.
-        flexWrap: fullscreen ? 'nowrap' : 'wrap',
-        overflowX: fullscreen ? 'auto' : 'visible',
-        padding: '6px 8px', background: 'var(--cth-cream-100)',
-        borderBottom: '1px solid var(--cth-ink-700)', flexShrink: 0
-      }}>
-        {visibleTabs.map((tabDef) => (
-          <button
-            key={tabDef.key}
-            onClick={() => setTab(tabDef.key)}
-            style={{
-              whiteSpace: 'nowrap',
-              // grow to share any spare width (so the strip still spans the panel
-              // exactly as the old grid did), never shrink below the label (a
-              // squashed tab is unreadable — overflow into the scroll instead).
-              flex: '1 0 auto',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              padding: '4px 8px 3px', border: 'none', cursor: 'pointer',
-              background: tab === tabDef.key ? `var(--cth-${agent.accent})` : 'var(--cth-cream-200)',
-              // The selected tab is filled with the agent's accent, which is a
-              // LIGHT colour in both themes. ink-900 flips to near-white in dark
-              // mode, so the active tab's label was pale-on-pale — the one tab
-              // you most need to read. On-accent text is dark in both themes.
-              color: tab === tabDef.key ? 'var(--cth-on-accent)' : 'var(--cth-ink-900)',
-              boxShadow: tab === tabDef.key
-                ? 'inset 0 0 0 1px var(--cth-ink-300)'
-                : 'inset 0 0 0 1px var(--cth-ink-100)',
-              fontFamily: 'var(--cth-font-ui)', fontSize: 13
-            }}
-          >
-            <Icon name={tabDef.icon} /> {t(tabDef.labelKey)}
-          </button>
-        ))}
-      </div>
-
-      {/* Body */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {tab === 'terminal' && (
-          isFullscreenedHere ? (
-            <Centered>{t('commandCenter.terminalFullscreen')}</Centered>
-          ) : agent.ptyId ? (
-            <>
-              {chatTheme && <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '2px 6px' }}>
-                <button type="button" onClick={toggleChatView} aria-pressed={chatView}
-                  style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--cth-ink-300)', borderRadius: 4, background: 'var(--cth-cream-200)', color: 'var(--cth-ink-900)', cursor: 'pointer' }}>
-                  {chatView ? 'Show terminal' : 'Show chat'}
-                </button>
-              </div>}
-              <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
-                {chatView && chatTheme && (
-                  <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex' }}>
-                    <AgentChatView agentId={agent.id} busy={agent.status === 'working' || agent.status === 'thinking'} theme={chatTheme} />
-                  </div>
-                )}
-                <PtyTerminalView
-                  key={terminalInstanceKey(agent.ptyId, agent.terminalGeneration)}
-                  ptyId={agent.ptyId}
-                  onStreamData={onPtyStream}
-                  onUserPrompt={(t) => {
-                    updateAgent(agent.id, { lastPrompt: t });
-                    if (t.trim().toLowerCase() === '/clear') {
-                      updateAgent(agent.id, { contextTokens: 0, contextLimit: undefined, progress: 0 });
-                    }
-                    void window.cth.historyAdd({ agentId: agent.id, cwd: agent.cwd, text: t });
-                  }}
-                  onToggleFullscreen={() => setFullscreen(fullscreen ? null : agent.id)}
-                  fullscreen={fullscreen}
-                  embedded={!fullscreen}
-                />
-              </div>
-              <MessageQueueComposer agent={agent} />
-            </>
-          ) : (
-            <Centered>{t('commandCenter.noTerminal', { name: agent.name })}</Centered>
-          )
-        )}
-        {tab === 'chat' && <TeamChat />}
-        {/* Always mounted: switching tabs must not hang up the call. */}
-        <div style={{ display: tab === 'meeting' ? 'contents' : 'none' }}><MeetingRoom /></div>
-        {tab === 'floor' && <FloorTab seed={dispatchSeed} />}
-        {tab === 'tasks' && <TasksKanban />}
-        {tab === 'human' && <AskMeTab />}
-        {tab === 'triggers' && <TriggersTab />}
-        {tab === 'trigger-history' && <TriggerHistoryTab />}
-        {tab === 'memory' && (
-          <MemoryTab godId={agent.id} who={selectedMemoryAgent ?? undefined} onWho={setSelectedMemoryAgent} />
-        )}
-        {tab === 'graph' && (
-          <MemoryGraphPanel
-            godId={agent.id}
-            onJumpToMemory={(id) => { setSelectedMemoryAgent(id); setTab('memory'); }}
-          />
-        )}
-        {tab === 'activity' && <ActivityTab />}
-        {tab === 'skills' && <SkillsTab agentCwd={agent.cwd} />}
-        {tab === 'workers' && <WorkersTab />}
-      </div>
-    </PixelPanel>
+      {tab === 'chat' && <TeamChat />}
+      {/* Always mounted: changing tabs must not hang up a call. */}
+      <div style={{ display: tab === 'meeting' ? 'contents' : 'none' }}><MeetingRoom /></div>
+      {tab === 'floor' && <FloorTab seed={dispatchSeed} />}
+      {tab === 'tasks' && <TasksKanban />}
+      {tab === 'human' && <AskMeTab />}
+      {tab === 'triggers' && <TriggersTab />}
+      {tab === 'trigger-history' && <TriggerHistoryTab />}
+      {tab === 'memory' && <MemoryTab key={agent.id} godId={agent.id} who={selectedMemoryAgent ?? undefined} onWho={setSelectedMemoryAgent} />}
+      {tab === 'graph' && <MemoryGraphPanel godId={agent.id} onJumpToMemory={id => { setSelectedMemoryAgent(id); setTab('memory'); }} />}
+      {tab === 'activity' && <ActivityTab />}
+      {tab === 'skills' && <SkillsTab agentCwd={agent.cwd} />}
+      {tab === 'workers' && <WorkersTab />}
+      {tab === 'git' && <GitTab key={agent.cwd} cwd={agent.cwd} />}
+      {tab === 'messages' && <ThreadsPanel key={agent.id} agentId={agent.id} />}
+      {tab === 'traces' && <ToolWaterfall key={agent.id} agentId={agent.id} />}
+      {tab === 'roster' && <AgentStrip />}
+      {tab === 'controls' && <div style={{ overflowY: 'auto' }}><AgentControlStrip key={agent.id} agentId={agent.id} />
+        <div style={{ padding: 16 }}><PixelButton onClick={() => { void toggleFloorDelivery(); }}>
+          {floorDeliveryPaused ? t('commandCenter.deliveryPausedTitle') : t('commandCenter.deliveryOnTitle')}
+        </PixelButton>
+        <PixelButton onClick={async () => {
+          const result = await window.cth.openTerminalAt(agent.cwd);
+          if (!result.ok) alert(result.error || 'Unable to open a system terminal.');
+        }}>Open system terminal</PixelButton>
+        {agent.ptyId && <PixelButton variant="destructive" onClick={async () => {
+          if (!confirm(t('agentDetail.killConfirm', { name: agent.name }))) return;
+          await window.cth.killPty(agent.ptyId!);
+          disposeTerminal(agent.ptyId!);
+          useStore.getState().archiveAgent(agent.id);
+        }}>End agent session</PixelButton>}</div></div>}
+    </AgentWorkspaceFrame>
   );
 }
 

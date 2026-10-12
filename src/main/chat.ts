@@ -69,7 +69,7 @@ export function createChat(deps: ChatDeps) {
   const stored = (): Record<string, ChatTier> => deps.getKv<Record<string, ChatTier>>(TIERS_KEY) ?? {};
   const tiers = (): Record<string, ChatTier> => {
     const all: Record<string, ChatTier> = {};
-    for (const id of deps.agentIds?.() ?? []) all[id] = 'staff';
+    for (const id of deps.agentIds?.() ?? []) all[id] = id === deps.leadAgentId?.() ? 'leadership' : 'staff';
     for (const [id, tier] of Object.entries(stored())) if (tier === 'off') delete all[id]; else all[id] = tier;
     return all;
   };
@@ -120,7 +120,7 @@ export function createChat(deps: ChatDeps) {
       '', 'Recent conversation (oldest first):', ...recent, '',
       mentioned
         ? 'You were @mentioned in it: reply.'
-        : 'You lead this chat. Answer it yourself, or @mention the ONE teammate best placed to; never @mention everyone. If nothing needs saying, do NOT reply.',
+        : 'You lead this chat. Acknowledge the human request and answer it yourself, or assign it to the ONE teammate best placed to. State who owns it and report their result back to the human; never @mention everyone.',
       'Each reply costs the owner usage: reply once, keep it to a few lines, and only @mention a teammate when you need them to act.',
       `Reply like a human coworker would in a group chat: short, casual, lots of emojis, real emotion (happy, annoyed, sad, angry), friendly swearing and roasting welcome, in your own personality and current mood. Mention a teammate with @Name to talk to them directly. Whenever you talk to or answer ${deps.myName()} (the human boss), ALWAYS tag them as @${myHandle()}.`,
       'To reply, write ONE message JSON into your hive outbox with "to":"chat", "act":"inform", a short "subject", and your reply as "body".',

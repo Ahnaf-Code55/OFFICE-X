@@ -5,13 +5,13 @@ import type { HarnessConfig } from '@/store/config';
 import { DEFAULT_ORG_TRIGGER } from '@shared/triggers';
 import { OfficeFloor } from '@/scene/office/OfficeFloor';
 import { useHive } from '@/hooks/useHive';
+import { useRestoreTeam } from '@/hooks/useRestoreTeam';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useGodNameSync } from '@/i18n/useGodNameSync';
 import { useDirectionSync } from '@/i18n/useDirection';
 import { useArabicTerminalSync } from '@/terminal/useArabicTerminalSync';
 import { MemoryPanel } from '@/components/MemoryPanel';
 import { AgentDetailPanel } from '@/components/AgentDetailPanel';
-import { AgentStrip } from '@/components/AgentStrip';
 import { AddAgentModal } from '@/components/AddAgentModal';
 import { MichaelBooting } from '@/components/MichaelBooting';
 import { OnboardingWizard } from '@/components/OnboardingWizard';
@@ -77,6 +77,10 @@ export function App() {
     } catch { /* localStorage unavailable — show the picker */ }
     return false;
   });
+  // Team restoration must also run when no agent is selected yet. Previously
+  // the always-mounted floor strip owned this; the new dock belongs to a session.
+  const { restoring, restoreTeam, restoreNote } = useRestoreTeam(hiveOpened ? config : null);
+  const restorableCount = useStore(s => s.restorableAgents.length);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Which tab Settings opens on. Set by a `cth:open-settings` deep link, reset
    *  to undefined (→ General) whenever the modal is opened the normal way. */
@@ -437,10 +441,12 @@ export function App() {
           width={sidebarWidth}
           onChange={setSidebarWidth}
           viewportWidth={vpWidth}
+          min={480}
+          max={2000}
         />
 
         <div style={{
-          width: sidebarWidth, flexShrink: 0,
+          width: Math.min(sidebarWidth, Math.max(320, vpWidth - 360)), flexShrink: 0,
           minHeight: 0, display: 'flex', flexDirection: 'column'
         }}>
           {agent ? (
@@ -471,20 +477,23 @@ export function App() {
                 color: 'var(--cth-ink-500)'
               }}>NO AGENT SELECTED</div>
               <p style={{ margin: 0, fontSize: 13, textAlign: 'center', color: 'var(--cth-ink-700)' }}>
-                Spawn an agent from the strip below.<br />
-                The terminal and command bar will land here.
+                Add an agent to open their workspace.<br />
+                Chat and tools will appear here.
               </p>
               <PixelButton variant="secondary" size="md" onClick={() => setAddAgentOpen(true)}>
                 <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                   <Icon name="plus" /> add agent
                 </span>
               </PixelButton>
+              {restorableCount > 0 && <PixelButton variant="secondary" size="md" disabled={restoring}
+                onClick={() => { void restoreTeam(); }}>
+                {restoring ? 'Restoring team…' : `Restore ${restorableCount} agents`}
+              </PixelButton>}
+              {restoreNote && <span role="status">{restoreNote}</span>}
             </PixelPanel>
           )}
         </div>
       </div>
-
-      <AgentStrip config={config} />
 
       {addAgentOpen && (
         <AddAgentModal

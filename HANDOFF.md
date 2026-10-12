@@ -12,7 +12,7 @@ Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring 
 
 ## Who owns what (claim before editing; see CONTRIBUTING "Working as a pair")
 - Ahnaf (@Ahnaf-Code55): TBD
-- Turjo (@TRahman2414): TBD
+- Turjo (@TRahman2414): agent response/startup fixes and right agent workspace; floor/scene files belong to Ahnaf. Details: [agent workspace handoff](docs/AGENT-WORKSPACE.md).
 
 ## Implemented
 - Virtual office from Munder Difflin, OQVIAN roles and working modes, plus Shared Office with reciprocal invites, pinned fingerprints, encrypted libp2p messages, separate teammate sections, and revocable access.
