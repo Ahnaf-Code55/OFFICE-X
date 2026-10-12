@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import type { Agent } from '@/store/store';
+import { SpritePortrait } from './SpritePortrait';
 
 type Turn = NonNullable<Awaited<ReturnType<typeof window.cth.agentChat>>>[number];
 type Row = Turn | { role: 'tools'; id: string; items: Turn[] };
@@ -46,16 +48,19 @@ function ToolGroup({ items, ran }: { items: Turn[]; ran: (n: number) => string }
 
 /** App-style view of an agent's conversation, read from its session transcript.
  *  The real TUI keeps running underneath; this only renders it. */
-export function AgentChatView({ agentId, busy, theme }: { agentId: string; busy: boolean; theme: ChatTheme }) {
+export function AgentChatView({ agentId, busy, theme, agent, onOpenTerminal }: { agentId: string; busy: boolean; theme: ChatTheme; agent?: Agent; onOpenTerminal?: () => void }) {
   const look = THEMES[theme];
   const [turns, setTurns] = useState<Turn[] | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     let alive = true;
     // ponytail: 1.5 s poll of the transcript tail; push from the hook server if it ever lags.
-    const load = () => void window.cth.agentChat(agentId).then((t) => { if (alive) setTurns(t); });
+    const load = () => void window.cth.agentChat(agentId).then((t) => {
+      if (alive) { setTurns(t); setError(false); }
+    }).catch(() => { if (alive) setError(true); });
     load();
     const timer = setInterval(load, 1500);
     return () => { alive = false; clearInterval(timer); };
@@ -68,9 +73,15 @@ export function AgentChatView({ agentId, busy, theme }: { agentId: string; busy:
 
   const shell: React.CSSProperties = { flex: 1, minHeight: 0, background: 'var(--cth-cream-50)', color: 'var(--cth-ink-900)', fontFamily: look.font, fontSize: 14, lineHeight: 1.55 };
 
-  if (!turns) {
-    return <div style={{ ...shell, display: 'grid', placeItems: 'center', color: 'var(--cth-ink-500)', fontSize: 12, padding: 16, textAlign: 'center' }}>
-      The chat appears after this agent's first turn. Use Show terminal until then.
+  if (!turns?.length) {
+    return <div className="aw-chat-empty" style={shell}>
+      {agent && <SpritePortrait character={agent.character} scale={1.3} />}
+      <h2>{error ? 'Conversation unavailable' : 'What should we work on?'}</h2>
+      <p>{error ? 'Open Terminal to view this session while the conversation reconnects.' : agent?.isGod
+        ? 'Coordinate tasks across your OQVIAN team.'
+        : agent ? `${agent.name}’s conversation will appear here.` : 'Start a conversation with this agent.'}</p>
+      {agent && agent.provider !== 'codex' && agent.provider !== 'claude' && <p>This engine’s live output is available in Terminal.</p>}
+      {error && onOpenTerminal && <button onClick={onOpenTerminal}>Open terminal</button>}
     </div>;
   }
 

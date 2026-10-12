@@ -54,7 +54,20 @@ export function SidebarSplitter({
         setActive(true);
         e.preventDefault();
       }}
-      onDoubleClick={() => onChange(420)}
+      role="separator"
+      aria-label="Resize agent workspace"
+      aria-orientation="vertical"
+      aria-valuemin={min}
+      aria-valuemax={Math.min(max, Math.max(min, viewportWidth - 360))}
+      aria-valuenow={width}
+      tabIndex={0}
+      onKeyDown={e => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        const next = width + (e.key === 'ArrowLeft' ? 24 : -24);
+        onChange(Math.min(Math.min(max, Math.max(min, viewportWidth - 360)), Math.max(min, next)));
+      }}
+      onDoubleClick={() => onChange(Math.round(viewportWidth * 0.54))}
       title="Drag to resize · double-click to reset"
       style={{
         width: 10,
