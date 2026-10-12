@@ -1,6 +1,6 @@
 # OFFICE-X handoff
 
-Updated: 2026-10-01
+Updated: 2026-10-13
 
 ## Goal
 Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring and control their own AI agents, with reciprocal trust and owner controlled permissions.
@@ -15,6 +15,7 @@ Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring 
 - Turjo (@TRahman2414): agent response/startup fixes and right agent workspace; floor/scene files belong to Ahnaf. Details: [agent workspace handoff](docs/AGENT-WORKSPACE.md).
 
 ## Implemented
+- 2026-10-13 local feature branch `trahman/agent-team-dock`: hierarchical Teams drawer for both sides, durable worker labels/assignments, OpenCode goal delivery and stale development roster-write protection. See [agent teams handoff](docs/AGENT-TEAMS.md) for scope, validation and next step. Personal hires are local; floor/scene files are unchanged.
 - Virtual office from Munder Difflin, OQVIAN roles and working modes, plus Shared Office with reciprocal invites, pinned fingerprints, encrypted libp2p messages, separate teammate sections, and revocable access.
 - Access levels support task requests, delegated agent prompts, and full control with opt-in terminal output sharing.
 - Direct P2P and self-hosted Circuit Relay v2 are implemented; no permanent managed relay endpoint is configured.
