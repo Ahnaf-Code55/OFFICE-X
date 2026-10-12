@@ -610,3 +610,18 @@ export function paintPortrait(ctx: CanvasRenderingContext2D, name: OfficeCharact
   ctx.clearRect(0, 0, PORTRAIT_W * scale, PORTRAIT_H * scale);
   ctx.drawImage(stage, 0, 0, PORTRAIT_W, PORTRAIT_H, 0, 0, PORTRAIT_W * scale, PORTRAIT_H * scale);
 }
+
+/** Plain look data for non-pixel renderers (the 3D office). Colours are 0-255 RGB. */
+export interface PersonLook {
+  skin: RGB; hair: RGB; hairStyle: string; hairLength?: number;
+  cloth: string; shirt: RGB; shirt2?: RGB; tie?: RGB; pants: RGB;
+  glasses: boolean; facial?: string; lashes: boolean; heavy: boolean;
+}
+export function personLook(name: OfficeCharacterName): PersonLook {
+  const r = RECIPES[name] ?? RECIPES.jim;
+  return {
+    skin: SKIN[r.skin].base as RGB, hair: r.hairc, hairStyle: r.hair, hairLength: r.hairargs?.length,
+    cloth: r.cloth, shirt: r.c1, shirt2: r.c2, tie: r.tie, pants: defaultPants(r),
+    glasses: !!r.glasses, facial: r.facial, lashes: !!r.lashes, heavy: !!r.heavy,
+  };
+}
