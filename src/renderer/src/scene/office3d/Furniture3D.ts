@@ -6,6 +6,37 @@ type Palette = {
   main: Mat; light: Mat; dark: Mat; metal: Mat; screen: Mat; leaf: Mat; paper: Mat;
 };
 
+/**
+ * Shared GPU resources. Floor tiles repeat the same handful of furniture
+ * sizes and colours, so each unique geometry (type + size) and material
+ * (colour + shading) is created once and reused by every furniture item.
+ * disposeFurniture() therefore only detaches a group's children — it never
+ * disposes the shared resources — and the caches are released wholesale via
+ * disposeFurnitureCache() when the 3D scene is torn down for good.
+ */
+const geometryCache = new Map<string, THREE.BufferGeometry>();
+const materialCache = new Map<string, Mat>();
+
+function dimsKey(...dims: number[]): string {
+  return dims.map((v) => v.toFixed(3)).join('x');
+}
+
+function cachedGeometry(key: string, make: () => THREE.BufferGeometry): THREE.BufferGeometry {
+  const hit = geometryCache.get(key);
+  if (hit) return hit;
+  const made = make();
+  geometryCache.set(key, made);
+  return made;
+}
+
+/** Release every cached geometry and material (e.g. on final 3D teardown). */
+export function disposeFurnitureCache(): void {
+  for (const geometry of geometryCache.values()) geometry.dispose();
+  for (const mat of materialCache.values()) mat.dispose();
+  geometryCache.clear();
+  materialCache.clear();
+}
+
 function itemColor(rgb: [number, number, number]): THREE.Color {
   const scale = Math.max(...rgb) > 1 ? 1 / 255 : 1;
   return new THREE.Color(
@@ -15,25 +46,49 @@ function itemColor(rgb: [number, number, number]): THREE.Color {
   );
 }
 
-function material(color: THREE.Color | number, roughness = 0.78, metalness = 0): Mat {
-  return new THREE.MeshStandardMaterial({ color, roughness, metalness });
+function material(
+  color: THREE.Color | number,
+  roughness = 0.78,
+  metalness = 0,
+  emissive = 0x000000,
+  emissiveIntensity = 0,
+): Mat {
+  const hex = typeof color === 'number' ? color.toString(16) : color.getHexString();
+  const key = `${hex}/${roughness}/${metalness}/${emissive.toString(16)}/${emissiveIntensity}`;
+  const hit = materialCache.get(key);
+  if (hit) return hit;
+  const made = new THREE.MeshStandardMaterial({ color, roughness, metalness, emissive, emissiveIntensity });
+  materialCache.set(key, made);
+  return made;
+}
+
+/**
+ * Item colours are per-tile averages, so almost every item differs slightly
+ * and an exact cache key would never dedupe. Snapping to a coarse grid makes
+ * near-identical items share one material set at no visible cost.
+ */
+function quantize(c: THREE.Color, step = 0.08): THREE.Color {
+  const q = (v: number) => Math.round(THREE.MathUtils.clamp(v, 0, 1) / step) * step;
+  return new THREE.Color(q(c.r), q(c.g), q(c.b));
 }
 
 function palette(item: FurnitureItem): Palette {
-  const base = itemColor(item.color);
+  const base = quantize(itemColor(item.color));
   return {
     main: material(base),
     light: material(base.clone().lerp(new THREE.Color(0xffffff), 0.24)),
     dark: material(base.clone().multiplyScalar(0.58)),
-    metal: material(0x565b60, 0.4, 0.45),
-    screen: material(0x18252c, 0.25, 0.18),
+    metal: material(0x8a9096, 0.35, 0.6),
+    // Cheap soft glow: a low-intensity emissive on the screen material.
+    screen: material(0x10161c, 0.35, 0.1, 0x4fc3f7, 0.55),
     leaf: material(base.clone().lerp(new THREE.Color(0x236b3b), 0.72), 0.9),
     paper: material(0xe8ddc9, 0.92),
   };
 }
 
 function box(parent: THREE.Object3D, mat: Mat, sx: number, sy: number, sz: number, x: number, y: number, z: number): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.025, sx), Math.max(0.025, sy), Math.max(0.025, sz)), mat);
+  const cx = Math.max(0.025, sx), cy = Math.max(0.025, sy), cz = Math.max(0.025, sz);
+  const mesh = new THREE.Mesh(cachedGeometry(`box/${dimsKey(cx, cy, cz)}`, () => new THREE.BoxGeometry(cx, cy, cz)), mat);
   mesh.position.set(x, y, z);
   parent.add(mesh);
   return mesh;
@@ -48,51 +103,57 @@ function cylinder(
   x: number,
   y: number,
   z: number,
-  sides = 10,
+  sides = 8,
 ): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(top, bottom, height, sides), mat);
+  const geometry = cachedGeometry(`cyl/${dimsKey(top, bottom, height)}/${sides}`, () =>
+    new THREE.CylinderGeometry(top, bottom, height, sides));
+  const mesh = new THREE.Mesh(geometry, mat);
   mesh.position.set(x, y, z);
   parent.add(mesh);
   return mesh;
 }
 
 function sphere(parent: THREE.Object3D, mat: Mat, radius: number, x: number, y: number, z: number): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 6), mat);
+  const mesh = new THREE.Mesh(cachedGeometry(`sph/${radius.toFixed(3)}`, () => new THREE.SphereGeometry(radius, 8, 6)), mat);
   mesh.position.set(x, y, z);
   parent.add(mesh);
   return mesh;
 }
 
+/** Slim modern desk: a thin light top on four thin metal legs. */
 function desk(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   const topW = Math.max(0.72, w * 0.9), topD = Math.max(0.55, d * 0.76);
-  box(parent, p.main, topW, 0.12, topD, 0, 0.79, 0);
-  const lx = Math.max(0.2, topW / 2 - 0.12), lz = Math.max(0.13, topD / 2 - 0.11);
-  for (const x of [-lx, lx]) for (const z of [-lz, lz]) box(parent, p.dark, 0.1, 0.7, 0.1, x, 0.39, z);
-  box(parent, p.dark, Math.min(0.42, topW * 0.28), 0.48, topD * 0.64, topW * 0.29, 0.5, 0);
+  box(parent, p.light, topW, 0.05, topD, 0, 0.74, 0);
+  const lx = Math.max(0.2, topW / 2 - 0.08), lz = Math.max(0.13, topD / 2 - 0.08);
+  for (const x of [-lx, lx]) for (const z of [-lz, lz]) box(parent, p.metal, 0.05, 0.72, 0.05, x, 0.36, z);
 }
 
+/** Desk plus a thin-bezel monitor whose screen has a soft emissive glow. */
 function monitor(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   desk(parent, p, w, d);
   const sw = Math.min(0.78, Math.max(0.48, w * 0.31));
-  box(parent, p.dark, sw + 0.06, 0.5, 0.07, 0, 1.14, -d * 0.13);
-  box(parent, p.screen, sw, 0.4, 0.025, 0, 1.15, -d * 0.13 - 0.04);
-  box(parent, p.metal, 0.07, 0.24, 0.07, 0, 0.92, -d * 0.13);
-  box(parent, p.metal, 0.34, 0.035, 0.2, 0, 0.86, -d * 0.13);
-  box(parent, p.light, Math.min(0.56, w * 0.27), 0.025, 0.18, 0, 0.87, d * 0.22);
+  const mz = -d * 0.13;
+  box(parent, p.metal, 0.3, 0.02, 0.18, 0, 0.775, mz); // stand foot
+  box(parent, p.metal, 0.05, 0.24, 0.05, 0, 0.9, mz); // stand neck
+  box(parent, p.dark, sw + 0.04, 0.46, 0.035, 0, 1.12, mz); // thin bezel
+  box(parent, p.screen, sw, 0.4, 0.012, 0, 1.12, mz + 0.024); // glowing screen
+  box(parent, p.light, Math.min(0.44, w * 0.24), 0.015, 0.14, 0, 0.775, d * 0.2); // keyboard
 }
 
+/** Mesh-back ergonomic chair on a 5-star base with casters. */
 function chair(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   const seatW = Math.min(0.68, Math.max(0.46, w * 0.64));
   const seatD = Math.min(0.62, Math.max(0.42, d * 0.48));
-  box(parent, p.main, seatW, 0.14, seatD, 0, 0.55, 0.04);
-  box(parent, p.main, seatW, 0.58, 0.12, 0, 0.84, -seatD / 2 + 0.03);
-  cylinder(parent, p.metal, 0.055, 0.055, 0.4, 0, 0.29, 0, 8);
-  for (const angle of [0, Math.PI / 2]) {
-    const leg = box(parent, p.metal, 0.72, 0.05, 0.07, 0, 0.08, 0);
-    leg.rotation.y = angle;
-  }
-  for (const [x, z] of [[-0.33, 0], [0.33, 0], [0, -0.33], [0, 0.33]] as Array<[number, number]>) {
-    cylinder(parent, p.dark, 0.055, 0.055, 0.08, x, 0.04, z, 8);
+  box(parent, p.main, seatW, 0.09, seatD, 0, 0.5, 0); // seat
+  const back = box(parent, p.dark, seatW * 0.88, 0.52, 0.045, 0, 0.95, -seatD / 2 + 0.03); // mesh back
+  back.rotation.x = -0.12;
+  box(parent, p.metal, 0.05, 0.3, 0.05, 0, 0.68, -seatD / 2 + 0.05); // back post
+  cylinder(parent, p.metal, 0.03, 0.03, 0.4, 0, 0.28, 0, 8); // gas lift
+  for (let i = 0; i < 5; i++) {
+    const a = (i * Math.PI * 2) / 5;
+    const leg = box(parent, p.dark, 0.34, 0.035, 0.05, 0.15, 0.05, 0);
+    leg.rotation.y = a;
+    cylinder(parent, p.dark, 0.028, 0.028, 0.05, Math.cos(a) * 0.31, 0.03, -Math.sin(a) * 0.31, 6);
   }
 }
 
@@ -110,34 +171,38 @@ function shelf(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   }
 }
 
+/** Plain cabinet body with a door split line, handles, and a bevelled top. */
 function cabinet(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   const ww = Math.max(0.68, w * 0.82), dd = Math.max(0.48, d * 0.72), h = 1.28;
   box(parent, p.main, ww, h, dd, 0, h / 2, 0);
-  box(parent, p.light, ww * 0.47, h * 0.88, 0.035, -ww * 0.245, h * 0.52, -dd / 2 - 0.018);
-  box(parent, p.light, ww * 0.47, h * 0.88, 0.035, ww * 0.245, h * 0.52, -dd / 2 - 0.018);
-  for (const x of [-0.055, 0.055]) box(parent, p.metal, 0.025, 0.2, 0.035, x, h * 0.55, -dd / 2 - 0.055);
+  box(parent, p.light, ww * 0.94, 0.05, dd * 0.94, 0, h + 0.02, 0);
+  box(parent, p.dark, 0.025, h * 0.8, 0.02, 0, h * 0.5, -dd / 2 - 0.012);
+  for (const x of [-0.07, 0.07]) box(parent, p.metal, 0.03, 0.18, 0.03, x, h * 0.52, -dd / 2 - 0.03);
 }
 
+/** Slim conference table: thin top, veneer inlay, and two narrow panel legs. */
 function table(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
-  const ww = Math.max(1, w * 0.88), dd = Math.max(0.75, d * 0.78), y = 0.78;
-  box(parent, p.main, ww, 0.16, dd, 0, y, 0);
-  // A contrasting narrow rim makes a large conference table read clearly.
-  box(parent, p.light, ww, 0.045, 0.055, 0, y + 0.1, -dd / 2 + 0.03);
-  box(parent, p.light, ww, 0.045, 0.055, 0, y + 0.1, dd / 2 - 0.03);
-  box(parent, p.light, 0.055, 0.045, dd, -ww / 2 + 0.03, y + 0.1, 0);
-  box(parent, p.light, 0.055, 0.045, dd, ww / 2 - 0.03, y + 0.1, 0);
-  for (const x of [-ww * 0.34, ww * 0.34]) box(parent, p.dark, 0.16, 0.7, dd * 0.58, x, 0.38, 0);
+  const ww = Math.max(1, w * 0.88), dd = Math.max(0.75, d * 0.78), y = 0.76;
+  box(parent, p.main, ww, 0.1, dd, 0, y, 0);
+  box(parent, p.light, ww * 0.9, 0.02, dd * 0.86, 0, y + 0.06, 0);
+  for (const x of [-ww * 0.34, ww * 0.34]) box(parent, p.dark, 0.08, 0.7, dd * 0.6, x, 0.37, 0);
 }
 
+/** Sofa with cylindrical rolled arms and back rail for a rounded read. */
 function sofa(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   const ww = Math.max(1.25, w * 0.88), dd = Math.max(0.7, d * 0.72);
-  box(parent, p.dark, ww, 0.28, dd, 0, 0.2, 0);
-  box(parent, p.main, ww, 0.72, 0.22, 0, 0.64, dd / 2 - 0.11);
-  for (const x of [-ww / 2 + 0.12, ww / 2 - 0.12]) box(parent, p.main, 0.24, 0.58, dd, x, 0.43, 0);
+  box(parent, p.main, ww, 0.3, dd, 0, 0.22, 0);
+  box(parent, p.main, ww, 0.5, 0.2, 0, 0.58, dd / 2 - 0.1);
+  const rail = cylinder(parent, p.main, 0.1, 0.1, ww, 0, 0.86, dd / 2 - 0.1, 8);
+  rail.rotation.z = Math.PI / 2;
+  for (const x of [-ww / 2 + 0.13, ww / 2 - 0.13]) {
+    const arm = cylinder(parent, p.main, 0.13, 0.13, dd * 0.92, x, 0.5, 0, 8);
+    arm.rotation.x = Math.PI / 2;
+  }
   const cushions = Math.max(2, Math.min(5, Math.round(ww / 0.8)));
   const cw = (ww - 0.58) / cushions;
   for (let i = 0; i < cushions; i++) {
-    box(parent, p.light, cw * 0.9, 0.18, dd * 0.64, -ww / 2 + 0.29 + cw * (i + 0.5), 0.47, -dd * 0.06);
+    box(parent, p.light, cw * 0.9, 0.15, dd * 0.62, -ww / 2 + 0.29 + cw * (i + 0.5), 0.44, -dd * 0.05);
   }
 }
 
@@ -160,20 +225,23 @@ function counter(parent: THREE.Object3D, p: Palette, w: number, d: number): void
   for (let i = 1; i < panels; i++) box(parent, p.main, 0.025, 0.66, 0.03, -ww / 2 + ww * i / panels, 0.47, -dd * 0.4);
 }
 
+/** Plain appliance body with a door line, handle, bevelled top, and display. */
 function appliance(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   const ww = Math.max(0.65, w * 0.82), dd = Math.max(0.56, d * 0.74), h = 1.45;
   box(parent, p.main, ww, h, dd, 0, h / 2, 0);
-  box(parent, p.dark, ww * 0.76, h * 0.29, 0.035, 0, h * 0.69, -dd / 2 - 0.02);
-  box(parent, p.screen, ww * 0.28, h * 0.1, 0.025, ww * 0.2, h * 0.79, -dd / 2 - 0.045);
-  box(parent, p.metal, ww * 0.46, 0.035, 0.035, 0, h * 0.46, -dd / 2 - 0.045);
+  box(parent, p.light, ww * 0.94, 0.05, dd * 0.94, 0, h + 0.02, 0);
+  box(parent, p.dark, ww * 0.8, 0.025, 0.02, 0, h * 0.55, -dd / 2 - 0.012);
+  box(parent, p.metal, ww * 0.4, 0.035, 0.03, 0, h * 0.62, -dd / 2 - 0.03);
+  box(parent, p.screen, ww * 0.26, h * 0.09, 0.02, ww * 0.2, h * 0.8, -dd / 2 - 0.02);
 }
 
+/** Plain crate with a lid seam, small handle, and a bevelled top edge. */
 function crate(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   const ww = Math.max(0.45, w * 0.76), dd = Math.max(0.45, d * 0.76), h = 0.62;
   box(parent, p.main, ww, h, dd, 0, h / 2, 0);
-  box(parent, p.dark, ww, 0.07, 0.07, 0, h * 0.72, -dd / 2 - 0.01);
-  box(parent, p.dark, ww, 0.07, 0.07, 0, h * 0.28, -dd / 2 - 0.01);
-  box(parent, p.dark, 0.07, h, 0.07, 0, h / 2, -dd / 2 - 0.01).rotation.z = Math.PI / 5;
+  box(parent, p.light, ww * 0.92, 0.045, dd * 0.92, 0, h + 0.015, 0);
+  box(parent, p.dark, ww * 0.7, 0.02, 0.02, 0, h * 0.55, -dd / 2 - 0.01);
+  box(parent, p.metal, 0.16, 0.035, 0.03, 0, h * 0.68, -dd / 2 - 0.02);
 }
 
 /** Build a low-poly prop whose group origin is the footprint's top-left floor corner. */
@@ -193,7 +261,6 @@ export function buildFurniture(item: FurnitureItem): THREE.Group {
   const w = Math.max(0.5, quarterTurn ? item.d : item.w);
   const d = Math.max(0.5, quarterTurn ? item.w : item.d);
   const p = palette(item);
-  group.userData.ownedMaterials = Object.values(p);
   switch (item.kind) {
     case 'desk': desk(pivot, p, w, d); break;
     case 'chair': chair(pivot, p, w, d); break;
@@ -213,19 +280,11 @@ export function buildFurniture(item: FurnitureItem): THREE.Group {
   return group;
 }
 
-/** Dispose all GPU resources owned by a furniture group. */
+/**
+ * Detach a furniture group's children. All geometry and materials come from
+ * the shared module caches, so nothing GPU-side is disposed per item — call
+ * disposeFurnitureCache() to release the shared resources wholesale.
+ */
 export function disposeFurniture(group: THREE.Group): void {
-  const geometries = new Set<THREE.BufferGeometry>();
-  const materials = new Set<THREE.Material>();
-  group.traverse((o) => {
-    if (!(o instanceof THREE.Mesh)) return;
-    geometries.add(o.geometry);
-    const own = Array.isArray(o.material) ? o.material : [o.material];
-    for (const m of own) materials.add(m);
-  });
-  const owned = group.userData.ownedMaterials as THREE.Material[] | undefined;
-  for (const mat of owned ?? []) materials.add(mat);
-  for (const geometry of geometries) geometry.dispose();
-  for (const mat of materials) mat.dispose();
   group.clear();
 }

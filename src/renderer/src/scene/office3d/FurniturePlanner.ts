@@ -128,6 +128,11 @@ function classify(
   const long = Math.max(box.w, box.d), short = Math.min(box.w, box.d);
 
   if (families.green > 0 && n <= 4 && long <= 2) return 'plant';
+
+  // A solid block that is large and wide in both directions is a conference/
+  // boardroom table, however it is coloured; sofas are long but narrow.
+  if (long >= 4 && short >= 3 && n >= 8) return 'table';
+
   if ((family === 'purple' || families.purple >= 2) && long >= 3 && n >= 4) return 'sofa';
   if (n === 1) {
     if (family === 'neutral') return 'appliance';
@@ -151,7 +156,9 @@ function classify(
   }
 
   if (long >= 6 && short <= 2) return family === 'wood' ? 'counter' : 'shelf';
-  if (box.w >= 4 && box.d >= 3) return family === 'purple' ? 'sofa' : 'table';
+  // Large wide blocks are tables regardless of colour (caught above when
+  // solid; sparse shapes reach here).
+  if (box.w >= 4 && box.d >= 3) return 'table';
   if (long >= 4 && short <= 2) return family === 'purple' ? 'sofa' : 'counter';
   if (box.w >= 3 && box.d >= 2) return 'table';
   if (long >= 2) return family === 'wood' ? 'desk' : 'cabinet';

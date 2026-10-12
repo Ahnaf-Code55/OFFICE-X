@@ -36,3 +36,8 @@ double-click = back to the starting view. Teammates are drawn but not selectable
 - Without a GPU the app runs at about 12 fps in 2D and 3D alike (software rendering).
 - Linux/Wayland: Electron needs `--ozone-platform=x11` here (`npm run dev -- -- --ozone-platform=x11`).
 - Tested on Linux only.
+
+## Lighting and memory (v3)
+- Light follows the local clock: amber low sun at dawn and dusk, bright at noon, dim but readable at night. It updates once a minute and only changes existing lights.
+- Shadow map is 1024 px, and LQ frees it entirely.
+- Furniture geometry and materials are shared between items instead of created per item.
