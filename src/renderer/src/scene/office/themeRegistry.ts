@@ -209,7 +209,7 @@ export const OFFICE_THEME: ThemeConfig = {
     ],
   },
   palette: {
-    background: colors.ink[900],
+    background: 0x08090b, // OQVIAN bg.canvas
     noteColors: { todo: 0xf2df8a, doing: 0x9ecbf0, blocked: 0xf0a3a3, done: 0xa8e0b0 },
   },
   cast: {

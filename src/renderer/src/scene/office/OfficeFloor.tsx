@@ -146,6 +146,30 @@ const CHEER_KEYS = [
   'office.cheer.6'
 ] as const;
 
+/** OQVIAN grade: the vendored tilesets paint floors/walls in a muted sage green that reads as
+ *  Minecraft grass. Pull only those muted greens/teals (saturation < 0.32) to a warm
+ *  office-carpet greige, keeping brightness. Plants and other saturated colours are untouched.
+ *  ponytail: one pass at load; bake edited PNGs instead if the load cost ever shows up. */
+function warmNeutral(img: HTMLImageElement): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const ctx = c.getContext('2d')!;
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height);
+  const p = d.data;
+  for (let i = 0; i < p.length; i += 4) {
+    const r = p[i], g = p[i + 1], b = p[i + 2];
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    if (max === min || g < r || g < b) continue; // not green-dominant
+    const s = (max - min) / max;
+    if (s < 0.07 || s > 0.32) continue;
+    // greige: same brightness, slight warm cast (r > g > b)
+    p[i] = max; p[i + 1] = Math.round(max * 0.965); p[i + 2] = Math.round(max * 0.91);
+  }
+  ctx.putImageData(d, 0, 0);
+  return c;
+}
+
 /** Load a texture via an <img> element. Unlike Pixi's Assets.load(), this
  *  handles extension-less data: URLs (Vite inlines small assets like the a5
  *  tileset as base64), which the Assets resolver fails to type-detect. */
@@ -153,7 +177,7 @@ function loadTexture(url: string): Promise<Texture> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      const tex = Texture.from(img);
+      const tex = Texture.from(warmNeutral(img));
       tex.source.scaleMode = 'nearest';
       resolve(tex);
     };
