@@ -182,6 +182,25 @@ the module by module layout, and the design system.
   commit message.** A pushed commit message is public and permanent, and no
   later rewrite retracts it once it has been fetched.
 
+## Working as a pair (Ahnaf + Turjo)
+
+`main` can't be locked on our plan, so these rules only work if we both keep them:
+
+1. Never commit to `main` directly. Start each piece of work with
+   `git switch main && git pull && git switch -c <you>/<topic>`.
+2. Keep PRs small and merge them within a day or two. The longer a branch lives,
+   the harder its merge gets.
+3. If your branch is open overnight, run `git pull origin main` on it each morning,
+   or click **Update branch** on the PR.
+4. Claim your area in the "Who owns what" list in `HANDOFF.md` before you start,
+   and don't edit the other person's area without asking first.
+5. Lockfile conflicts: `git checkout origin/main -- package-lock.json && npm install`,
+   then commit.
+6. Merge with **Squash and merge** (the only option turned on). The branch is
+   deleted for you after merging.
+7. Wait for CI (typecheck + focused tests) to pass and for the other person to
+   approve before you merge.
+
 ## A note on assets
 
 The bundled tilesets are LimeZu's *Modern Interiors*, used under the **Complete

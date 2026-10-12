@@ -1,0 +1,2 @@
+# Lockfile conflicts: take main's version, run npm install, commit.
+package-lock.json -diff linguist-generated=true

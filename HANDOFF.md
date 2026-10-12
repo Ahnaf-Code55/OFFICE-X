@@ -10,6 +10,10 @@ Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring 
 - OQVIAN delivery PR: [Ahnaf-Code55/OQVIAN#1](https://github.com/Ahnaf-Code55/OQVIAN/pull/1), open and unmerged at `69b1e56`.
 - Preserve both OQVIAN and OFFICE-X branding. Linux and Windows x64 are in scope; macOS is not.
 
+## Who owns what (claim before editing; see CONTRIBUTING "Working as a pair")
+- Ahnaf (@Ahnaf-Code55): TBD
+- Turjo (@TRahman2414): TBD
+
 ## Implemented
 - Virtual office from Munder Difflin, OQVIAN roles and working modes, plus Shared Office with reciprocal invites, pinned fingerprints, encrypted libp2p messages, separate teammate sections, and revocable access.
 - Access levels support task requests, delegated agent prompts, and full control with opt-in terminal output sharing.

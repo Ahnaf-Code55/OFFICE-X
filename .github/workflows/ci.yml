@@ -9,7 +9,7 @@ on:
 jobs:
   typecheck:
     name: Typecheck
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,6 +20,8 @@ jobs:
         run: npm ci
       - name: Typecheck (node + web)
         run: npm run typecheck
+      - name: Focused tests
+        run: npm run test:focused
       # Release gate: every advertised download link and docs version string must
       # match package.json. A version left behind in RELEASE.md / docs turns the
       # download buttons into 404s the moment the next release ships — this catches
@@ -29,7 +31,7 @@ jobs:
 
   build:
     name: Build
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     # Build exercises the native node-pty rebuild; allowed to fail without blocking.
     continue-on-error: true
     steps:
