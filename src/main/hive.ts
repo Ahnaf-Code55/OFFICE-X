@@ -840,7 +840,7 @@ export class HiveManager {
           if (desc.kind === 'hooks') {
             if (desc.shim === 'agy') this.installAgyHooks();
             else if (desc.shim === 'codex') {
-              env.CODEX_HOME = this.installCodexHooks(dir, meta.id);
+              env.CODEX_HOME = this.installCodexHooks(dir, meta.id, opts.skillsDir);
               // Codex refuses to run hooks from a config dir without persisted
               // "hook trust" (normally an interactive gate). Our hooks.json is
               // hive-authored inside an isolated CODEX_HOME, so we bypass that gate
@@ -2090,7 +2090,7 @@ export class HiveManager {
    *  ~/.codex/auth.json is linked in and their config.toml is copied + extended
    *  (login + model/provider/trust settings still apply).
    *  Returns the CODEX_HOME path for the caller to put in the worker's env. */
-  private installCodexHooks(dir: string, agentId: string): string {
+  private installCodexHooks(dir: string, agentId: string, skillsDir?: string): string {
     const home = join(dir, '.codex');
     try {
       mkdirSync(home, { recursive: true });
@@ -2160,6 +2160,14 @@ export class HiveManager {
           config += `\n[[hooks.${ev}]]\n[[hooks.${ev}.hooks]]\ntype = "command"\ncommand = ${JSON.stringify(command)}\ntimeout = 30\n`;
         }
       }
+      // Token-saving defaults for Codex too: the headroom MCP server (from the same
+      // catalog Claude agents use; skipped if the user already declares one) and the
+      // bundled skills (ponytail, caveman), which Codex reads from $CODEX_HOME/skills.
+      const hr = MCP_CATALOG.find((e) => e.id === 'headroom');
+      if (hr && !/\[mcp_servers\.headroom\]/.test(config)) {
+        config += `\n[mcp_servers.headroom]\ncommand = ${JSON.stringify(hr.spec.command)}\nargs = ${JSON.stringify(hr.spec.args)}\n`;
+      }
+      if (skillsDir) this.copyBundledSkills(skillsDir, join(home, 'skills'));
       writeFileSync(join(home, 'config.toml'), config, 'utf8');
 
       // Keep each worker's CODEX_HOME isolated while putting its rollout data
