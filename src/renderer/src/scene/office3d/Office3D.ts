@@ -8,6 +8,7 @@ import type { TiledMap } from '../office/TiledMapRenderer';
 import type { OfficeCharacterName } from '../office/cast';
 import { personLook } from '../office/portraitArt';
 import { Person3D } from './Person3D';
+import { NameTag3D } from './NameTag3D';
 
 const FLIP_H = 0x80000000, FLIP_V = 0x40000000, FLIP_D = 0x20000000, ID_MASK = 0x1fffffff;
 const SRC_SCALE = 3;        // canvas pixels per source pixel for the baked layer textures
@@ -23,6 +24,8 @@ export interface Person3DState {
   dir: 'down' | 'up' | 'left' | 'right';
   sitting: boolean;
   visible: boolean;
+  label: string;             // name tag text
+  dot?: string;              // status dot colour (CSS)
 }
 
 /** Draw one Tiled tile layer into a canvas (gid flip flags honoured). */
@@ -74,7 +77,7 @@ export class Office3D {
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
-  private people = new Map<string, { p: Person3D; name: string }>();
+  private people = new Map<string, { p: Person3D; name: string; tag: NameTag3D }>();
   private ray = new THREE.Raycaster();
   private disposables: Array<{ dispose(): void }> = [];
   private ro: ResizeObserver;
@@ -85,6 +88,7 @@ export class Office3D {
     map: TiledMap,
     textures: Texture[],
     private onSelect: (id: string) => void,
+    isWalkable: (x: number, y: number) => boolean,
   ) {
     const W = map.width, H = map.height;
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -95,11 +99,11 @@ export class Office3D {
     el.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;';
     host.appendChild(el);
 
-    this.scene.background = new THREE.Color(0x0b0d10);
+    this.scene.background = new THREE.Color(0x14110e);
 
     // lights: soft sky/ground fill + one sun with shadows over the whole floor plan
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8d8a86, 1.15));
-    const sun = new THREE.DirectionalLight(0xfff4e4, 1.5);
+    this.scene.add(new THREE.HemisphereLight(0xfff3e2, 0xa89a88, 1.25));
+    const sun = new THREE.DirectionalLight(0xffe8c8, 1.7);
     sun.position.set(W / 2 - 14, 34, H / 2 + 20);
     sun.target.position.set(W / 2, 0, H / 2);
     sun.castShadow = true;
@@ -113,7 +117,7 @@ export class Office3D {
     const groundTex = pixelTexture(bakeLayers(map, textures, ['floor', 'furniture-below', 'furniture-above']), this.renderer);
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(W, H),
-      new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95 }),
+      new THREE.MeshStandardMaterial({ map: groundTex, color: 0xfff0dc, roughness: 0.95 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(W / 2, 0, H / 2);
@@ -121,10 +125,18 @@ export class Office3D {
     this.scene.add(ground);
     this.disposables.push(groundTex, ground.geometry, ground.material as THREE.Material);
 
-    this.buildWalls(map, textures);
+    // a thick base slab so the floor plan reads as a solid model, not a sheet
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 1, 0.6, H + 1), new THREE.MeshStandardMaterial({ color: 0x2a2520, roughness: 1 }));
+    slab.position.set(W / 2, -0.31, H / 2);
+    slab.receiveShadow = true;
+    this.scene.add(slab);
+    this.disposables.push(slab.geometry, slab.material as THREE.Material);
 
-    this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 300);
-    this.camera.position.set(W / 2, 40, H / 2 + 30);
+    this.buildWalls(map, textures);
+    this.buildFurniture(map, textures, isWalkable);
+
+    this.camera = new THREE.PerspectiveCamera(36, 1, 0.5, 300);
+    this.camera.position.set(W / 2, 38, H / 2 + 27);
     this.controls = new OrbitControls(this.camera, el);
     this.controls.target.set(W / 2, 0, H / 2);
     this.controls.enableDamping = true;
@@ -137,6 +149,7 @@ export class Office3D {
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(host);
     this.resize();
+    this.fitCamera(W, H);
   }
 
   /** Extrude every wall-layer tile into a low block: tile art on top, plaster on the sides. */
@@ -186,6 +199,74 @@ export class Office3D {
     this.disposables.push(topTex, topGeo, sideGeo, topMat, sideMat);
   }
 
+  /** Blocking furniture tiles become low blocks: art on top, the art's average colour on the sides. */
+  private buildFurniture(map: TiledMap, textures: Texture[], isWalkable: (x: number, y: number) => boolean): void {
+    const W = map.width, H = map.height;
+    const art = bakeLayers(map, textures, ['furniture-below', 'furniture-above']);
+    const actx = art.getContext('2d', { willReadFrequently: true })!;
+    const topTex = pixelTexture(art, this.renderer);
+    topTex.premultiplyAlpha = false;
+    const gid = (name: string, x: number, y: number) => {
+      const l = map.layers.find((q) => q.name === name && q.type === 'tilelayer');
+      return ((l?.data?.[y * W + x] ?? 0) & ID_MASK) !== 0;
+    };
+    const tpx = map.tilewidth * SRC_SCALE;
+    const topPos: number[] = [], topUv: number[] = [];
+    const sidePos: number[] = [], sideCol: number[] = [];
+    const quad = (pos: number[], q: number[][]) => { for (const i of [0, 1, 2, 0, 2, 3]) pos.push(...q[i]); };
+    const solid = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && gid('furniture-below', x, y) && !isWalkable(x, y);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (!solid(x, y)) continue;
+      // average opaque colour of the tile (furniture-above on top of it included)
+      const px = actx.getImageData(x * tpx, y * tpx, tpx, tpx).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < px.length; i += 4) if (px[i + 3] > 200) { r += px[i]; g += px[i + 1]; b += px[i + 2]; n++; }
+      const avg = n ? new THREE.Color(r / n / 255, g / n / 255, b / n / 255).convertSRGBToLinear() : WALL_SIDE;
+      const lit = avg.clone().multiplyScalar(0.8), dark = avg.clone().multiplyScalar(0.5);
+      const h = 0.85;
+      quad(topPos, [[x, h, y], [x, h, y + 1], [x + 1, h, y + 1], [x + 1, h, y]]);
+      const u0 = x / W, u1 = (x + 1) / W, v0 = 1 - y / H, v1 = 1 - (y + 1) / H;
+      for (const [u, v] of [[u0, v0], [u0, v1], [u1, v1], [u0, v0], [u1, v1], [u1, v0]]) topUv.push(u, v);
+      const sides: Array<[boolean, number[][]]> = [
+        [!solid(x, y + 1), [[x, 0, y + 1], [x + 1, 0, y + 1], [x + 1, h, y + 1], [x, h, y + 1]]],
+        [!solid(x, y - 1), [[x + 1, 0, y], [x, 0, y], [x, h, y], [x + 1, h, y]]],
+        [!solid(x + 1, y), [[x + 1, 0, y + 1], [x + 1, 0, y], [x + 1, h, y], [x + 1, h, y + 1]]],
+        [!solid(x - 1, y), [[x, 0, y], [x, 0, y + 1], [x, h, y + 1], [x, h, y]]],
+      ];
+      for (const [open, q] of sides) {
+        if (!open) continue;
+        quad(sidePos, q);
+        for (const i of [0, 1, 2, 0, 2, 3]) { const c = q[i][1] === 0 ? dark : lit; sideCol.push(c.r, c.g, c.b); }
+      }
+    }
+    if (!topPos.length) { topTex.dispose(); return; }
+    const topGeo = new THREE.BufferGeometry();
+    topGeo.setAttribute('position', new THREE.Float32BufferAttribute(topPos, 3));
+    topGeo.setAttribute('uv', new THREE.Float32BufferAttribute(topUv, 2));
+    topGeo.computeVertexNormals();
+    const sideGeo = new THREE.BufferGeometry();
+    sideGeo.setAttribute('position', new THREE.Float32BufferAttribute(sidePos, 3));
+    sideGeo.setAttribute('color', new THREE.Float32BufferAttribute(sideCol, 3));
+    sideGeo.computeVertexNormals();
+    // the top shows the furniture art over the already-baked floor, so alpha cut-out keeps floor visible around it
+    const topMat = new THREE.MeshStandardMaterial({ map: topTex, alphaTest: 0.5, roughness: 0.85 });
+    const sideMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+    for (const m of [new THREE.Mesh(topGeo, topMat), new THREE.Mesh(sideGeo, sideMat)]) {
+      m.castShadow = true; m.receiveShadow = true; this.scene.add(m);
+    }
+    this.disposables.push(topTex, topGeo, sideGeo, topMat, sideMat);
+  }
+
+  /** Start framed so the whole floor plan fits at any window shape (the user can orbit/zoom after). */
+  private fitCamera(W: number, H: number): void {
+    const vf = THREE.MathUtils.degToRad(this.camera.fov);
+    const hf = 2 * Math.atan(Math.tan(vf / 2) * this.camera.aspect);
+    const d = THREE.MathUtils.clamp(Math.max((W * 0.56) / Math.tan(hf / 2), (H * 0.66) / Math.tan(vf / 2)), 20, 85);
+    const polar = 0.88;
+    this.camera.position.set(W / 2, d * Math.cos(polar), H / 2 + d * Math.sin(polar));
+    this.controls.update();
+  }
+
   private resize(): void {
     const w = this.host.clientWidth || 800, h = this.host.clientHeight || 600;
     this.renderer.setSize(w, h, false);
@@ -213,21 +294,24 @@ export class Office3D {
       seen.add(s.id);
       let e = this.people.get(s.id);
       if (!e || e.name !== s.name) {
-        if (e) { this.scene.remove(e.p.group); e.p.dispose(); }
+        if (e) { this.scene.remove(e.p.group); e.p.dispose(); e.tag.dispose(); }
         const p = new Person3D(personLook(s.name as OfficeCharacterName));
         p.group.userData.agentId = s.id;
+        const tag = new NameTag3D();
+        p.group.add(tag.sprite);
         this.scene.add(p.group);
-        e = { p, name: s.name };
+        e = { p, name: s.name, tag };
         this.people.set(s.id, e);
       }
       e.p.group.visible = s.visible;
+      e.tag.set(s.label, s.dot);
       e.p.group.position.set(s.x / 16, 0, s.y / 16);
       e.p.setPose(s.sitting && s.anim === 'idle' ? 'sit' : s.sitting && s.anim === 'walk' ? 'sit' : s.anim, s.dir);
       e.p.update(dt);
     }
     for (const [id, e] of this.people) {
       if (seen.has(id)) continue;
-      this.scene.remove(e.p.group); e.p.dispose(); this.people.delete(id);
+      this.scene.remove(e.p.group); e.p.dispose(); e.tag.dispose(); this.people.delete(id);
     }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
@@ -239,7 +323,7 @@ export class Office3D {
     el.removeEventListener('pointerdown', this.onDown);
     el.removeEventListener('pointerup', this.onUp);
     this.controls.dispose();
-    for (const e of this.people.values()) e.p.dispose();
+    for (const e of this.people.values()) { e.p.dispose(); e.tag.dispose(); }
     this.people.clear();
     for (const d of this.disposables) d.dispose();
     this.renderer.dispose();

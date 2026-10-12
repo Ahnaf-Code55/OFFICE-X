@@ -2049,7 +2049,7 @@ export function OfficeFloor() {
       let o3d: Office3D | null = null;
       if (view3d) {
         try {
-          o3d = new Office3D(host, mapRenderer.getMap(), mapRenderer.getTilesetTextures(), (id) => useStore.getState().select(id));
+          o3d = new Office3D(host, mapRenderer.getMap(), mapRenderer.getTilesetTextures(), (id) => useStore.getState().select(id), (x, y) => mapRenderer.isWalkable(x, y));
           app.canvas.style.display = 'none';
           (app as any).__off3d = () => o3d?.dispose();
         } catch (err) { console.error('[OfficeFloor] 3D view failed, staying 2D', err); o3d = null; }
@@ -2057,10 +2057,13 @@ export function OfficeFloor() {
       const tick3d = (ticker: Ticker) => {
         if (!o3d) return;
         const list: Person3DState[] = [];
+        const agents = useStore.getState().agents;
         for (const rt of runtimes.values()) {
           const c = rt.character;
           const p = c.getPixelPosition();
-          list.push({ id: c.agentId, name: rt.charName, x: p.x, y: p.y, anim: c.getAnimation(), dir: c.getFacing(), sitting: c.isSitting(), visible: c.isVisible });
+          const a = agents.find((q) => q.id === c.agentId);
+          const dot = a?.status === 'typing' || a?.status === 'compacting' || a?.status === 'looping' ? '#34d399' : a?.status === 'waiting' ? '#fbbf24' : '#9aa3ad';
+          list.push({ id: c.agentId, name: rt.charName, x: p.x, y: p.y, anim: c.getAnimation(), dir: c.getFacing(), sitting: c.isSitting(), visible: c.isVisible, label: a?.name ?? rt.charName, dot });
         }
         o3d.frame(list, ticker.deltaMS / 1000);
       };
