@@ -14,7 +14,10 @@ export const PORTRAIT_H = 28;
 // In-scene walking sprite: same width + upper body as the portrait, taller to add legs.
 export const SCENE_W = 18;
 export const SCENE_H = 32;
-const OUTLINE: RGB = [38, 34, 46];
+// A cool, near-black keyline keeps the portraits crisp without the warm,
+// chunky border that made their silhouettes feel like voxel characters.
+const OUTLINE: RGB = [8, 9, 11];
+const OQVIAN_BLUE: RGB = [58, 160, 255];
 const HX0 = 4, HX1 = 13; // head skin columns
 
 type RGB = [number, number, number];
@@ -63,16 +66,18 @@ const SKIN: Record<string, SkinPal> = {
 // ─── head + face ─────────────────────────────────────────────────────────────
 function drawHead(buf: Buf, skin: string): void {
   const s = SKIN[skin];
-  for (let y = 4; y <= 16; y++) {
-    for (let x = HX0; x <= HX1; x++) {
-      if (((x === HX0 || x === HX1) && (y === 4 || y === 5 || y === 16)) || ((x === 5 || x === 12) && y === 4)) continue;
-      set(buf, x, y, s.base);
-    }
-  }
+  // Stepped oval: the two inset crown rows and tapered jaw remove the square
+  // head corners while retaining the same feature coordinates and hair recipes.
+  const rows: [number, number, number][] = [
+    [4, 6, 11], [5, 5, 12], [6, 4, 13], [7, 4, 13], [8, 4, 13],
+    [9, 4, 13], [10, 4, 13], [11, 4, 13], [12, 4, 13], [13, 4, 13],
+    [14, 4, 13], [15, 5, 12], [16, 6, 11],
+  ];
+  for (const [y, x0, x1] of rows) rect(buf, x0, y, x1, y, s.base);
   for (let y = 6; y < 12; y++) set(buf, 5, y, s.hi);
   set(buf, 6, 5, s.hi); set(buf, 7, 5, s.hi);
   for (let y = 6; y < 15; y++) set(buf, 12, y, s.sh);
-  for (const x of [7, 8, 9, 10, 11]) set(buf, x, 16, s.sh);
+  for (const x of [7, 8, 9, 10]) set(buf, x, 16, s.sh);
   for (const ex of [HX0 - 1, HX1 + 1]) { set(buf, ex, 9, s.base); set(buf, ex, 10, s.base); set(buf, ex, 11, s.sh); }
   rect(buf, 7, 17, 10, 18, s.sh); rect(buf, 7, 17, 9, 17, s.base);
 }
@@ -116,9 +121,10 @@ type HairFn = (buf: Buf, color: RGB, skinBase: RGB, a: HairArgs) => void;
 const styleShort: HairFn = (buf, color, skinBase, a) => {
   const [hi, base, sh] = shades(color);
   const part = a.part ?? 'L', recede = a.recede ?? 0;
-  rect(buf, HX0, 2, HX1, 4, base);
-  for (let x = HX0 - 1; x <= HX1 + 1; x++) set(buf, x, 3, base);
-  rect(buf, HX0 - 1, 4, HX1 + 1, 5, base);
+  rect(buf, 6, 2, 11, 2, base);
+  rect(buf, HX0, 3, HX1, 3, base);
+  rect(buf, HX0 - 1, 4, HX1 + 1, 4, base);
+  rect(buf, HX0, 5, HX1, 5, base);
   for (let y = 6; y < 9; y++) { set(buf, HX0 - 1, y, base); set(buf, HX0, y, base); set(buf, HX1, y, base); set(buf, HX1 + 1, y, base); }
   for (let x = HX0; x <= HX1; x++) set(buf, x, 5, base);
   if (recede) {
@@ -133,9 +139,10 @@ const styleShort: HairFn = (buf, color, skinBase, a) => {
 
 const styleFloppy: HairFn = (buf, color) => {
   const [hi, base] = shades(color);
-  rect(buf, HX0, 2, HX1, 4, base);
-  for (let x = HX0 - 1; x <= HX1 + 1; x++) set(buf, x, 3, base);
-  rect(buf, HX0 - 1, 4, HX1 + 1, 5, base);
+  rect(buf, 6, 2, 11, 2, base);
+  rect(buf, HX0, 3, HX1, 3, base);
+  rect(buf, HX0 - 1, 4, HX1 + 1, 4, base);
+  rect(buf, HX0, 5, HX1, 5, base);
   for (let x = HX0; x <= HX1; x++) set(buf, x, 5, base);
   for (let x = 6; x <= 12; x++) set(buf, x, 6, base);
   set(buf, 9, 7, base); set(buf, 10, 7, base); set(buf, 11, 7, base);
@@ -147,8 +154,9 @@ const styleFloppy: HairFn = (buf, color) => {
 const styleFrame: HairFn = (buf, color, skinBase, a) => {
   const [hi, base, sh] = shades(color);
   const length = a.length ?? 17, vol = a.vol ?? 1;
-  rect(buf, HX0 - 1, 2, HX1 + 1, 5, base);
-  for (let x = HX0 - 1; x <= HX1 + 1; x++) set(buf, x, 3, base);
+  rect(buf, 5, 2, 12, 2, base);
+  rect(buf, HX0, 3, HX1, 3, base);
+  rect(buf, HX0 - 1, 4, HX1 + 1, 5, base);
   for (let x = HX0; x <= HX1; x++) set(buf, x, 5, base);
   for (let x = 6; x < 12; x++) set(buf, x, 6, base);
   set(buf, 8, 6, skinBase); set(buf, 9, 6, skinBase);
@@ -164,13 +172,15 @@ const styleFrame: HairFn = (buf, color, skinBase, a) => {
 
 const styleBun: HairFn = (buf, color, skinBase) => {
   const [hi, base] = shades(color);
-  rect(buf, HX0, 3, HX1, 5, base);
-  for (let x = HX0 - 1; x <= HX1 + 1; x++) set(buf, x, 4, base);
+  rect(buf, 5, 3, 12, 3, base);
+  rect(buf, HX0 - 1, 4, HX1 + 1, 4, base);
+  rect(buf, HX0, 5, HX1, 5, base);
   for (let x = HX0; x <= HX1; x++) set(buf, x, 5, base);
   for (let x = 6; x < 12; x++) set(buf, x, 6, base);
   set(buf, 8, 6, skinBase); set(buf, 9, 6, skinBase);
   for (let y = 6; y < 9; y++) { set(buf, HX0, y, base); set(buf, HX1, y, base); }
-  rect(buf, 7, 1, 10, 2, base);
+  rect(buf, 8, 1, 9, 1, base);
+  rect(buf, 7, 2, 10, 2, base);
   for (let x = HX0; x <= HX1; x++) if (alphaAt(buf, x, 3)) set(buf, x, 3, hi);
 };
 
@@ -292,11 +302,20 @@ type Cloth = 'suit' | 'dressshirt' | 'polo' | 'blouse' | 'cardigan' | 'sweater';
 function bodyShape(buf: Buf, col: RGB, heavy = false): void {
   const [, base, sh] = shades(col);
   const rows: [number, number, number][] = heavy
-    ? [[19, 5, 12], [20, 3, 14], [21, 2, 15], [22, 1, 16], [23, 1, 16], [24, 0, 17], [25, 0, 17], [26, 0, 17], [27, 0, 17]]
-    : [[19, 6, 11], [20, 4, 13], [21, 3, 14], [22, 2, 15], [23, 2, 15], [24, 1, 16], [25, 1, 16], [26, 1, 16], [27, 1, 16]];
+    ? [[19, 7, 10], [20, 5, 12], [21, 3, 14], [22, 2, 15], [23, 1, 16], [24, 1, 16], [25, 0, 17], [26, 0, 17], [27, 0, 17]]
+    : [[19, 7, 10], [20, 5, 12], [21, 4, 13], [22, 3, 14], [23, 2, 15], [24, 2, 15], [25, 1, 16], [26, 1, 16], [27, 1, 16]];
   for (const [y, a, b] of rows) rect(buf, a, y, b, y, base);
   const [lo, hi] = heavy ? [1, 16] : [2, 15];
-  for (let y = 22; y < 28; y++) { set(buf, lo, y, sh); set(buf, hi, y, sh); }
+  for (let y = 23; y < 28; y++) { set(buf, lo, y, sh); set(buf, hi, y, sh); }
+}
+
+/** One restrained brand detail, placed like a lapel pin / staff badge. */
+function drawOqvianAccent(buf: Buf, scene: boolean, back = false): void {
+  if (back) {
+    set(buf, 9, scene ? 21 : 23, OQVIAN_BLUE);
+    return;
+  }
+  set(buf, 11, scene ? 20 : 22, OQVIAN_BLUE);
 }
 function drawClothing(buf: Buf, kind: Cloth, c1: RGB, c2: RGB | undefined, tie: RGB | undefined, skin: string, heavy = false): void {
   const [hi, base, sh] = shades(c1);
@@ -354,15 +373,15 @@ function drawSceneTorso(buf: Buf, r: Recipe, back: boolean): void {
   const [hi, base, sh] = shades(r.c1);
   // shoulders → torso, narrower than the portrait bust (wider + rounder if heavy)
   if (r.heavy) {
-    rect(buf, 3, 18, 14, 18, base);
-    rect(buf, 2, 19, 15, 19, base);
+    rect(buf, 6, 18, 11, 18, base);
+    rect(buf, 4, 19, 13, 19, base);
     rect(buf, 2, 20, 15, 24, base);
     for (let y = 20; y <= 24; y++) { set(buf, 2, y, sh); set(buf, 15, y, sh); set(buf, 14, y, sh); }
   } else {
-    rect(buf, 4, 18, 13, 18, base);
-    rect(buf, 3, 19, 14, 19, base);
+    rect(buf, 7, 18, 10, 18, base);
+    rect(buf, 5, 19, 12, 19, base);
     rect(buf, 4, 20, 13, 24, base);
-    for (let y = 20; y <= 24; y++) { set(buf, 3, y, sh); set(buf, 14, y, sh); set(buf, 13, y, sh); } // arms / right shade
+    for (let y = 20; y <= 24; y++) { set(buf, 4, y, sh); set(buf, 13, y, sh); } // arms / right shade
   }
   if (back) {
     // plain back with a collar line + center seam
@@ -446,6 +465,7 @@ function drawHeadBackBald(buf: Buf, r: Recipe): void {
 
 function drawSceneBody(buf: Buf, r: Recipe, phase: number, back: boolean): void {
   drawSceneTorso(buf, r, back);
+  drawOqvianAccent(buf, true, back);
   drawSceneLegs(buf, defaultPants(r), phase);
 }
 
@@ -491,21 +511,21 @@ function drawHeavyFace(buf: Buf, skin: string): void {
 }
 
 const RECIPES: Record<OfficeCharacterName, Recipe> = {
-  michael:  { skin: 'light', hairc: [58, 42, 28],   hair: 'styleShort',  hairargs: { part: 'L' }, cloth: 'suit', c1: [58, 63, 74], tie: [170, 58, 58], brow: 'flat', mouth: 'smile' },
-  jim:      { skin: 'light', hairc: [92, 60, 34],   hair: 'styleFloppy', cloth: 'dressshirt', c1: [172, 196, 224], tie: [120, 130, 150], brow: 'flat', mouth: 'smile' },
-  pam:      { skin: 'light', hairc: [120, 76, 42],  hair: 'styleFrame',  hairargs: { length: 18, vol: 2 }, cloth: 'cardigan', c1: [236, 174, 192], c2: [244, 242, 238], brow: 'soft', mouth: 'smile', blush: true, lashes: true },
-  dwight:   { skin: 'light', hairc: [64, 48, 28],   hair: 'styleShort',  hairargs: { part: 'L', recede: 1 }, cloth: 'dressshirt', c1: [184, 155, 62], tie: [120, 82, 46], glasses: true, brow: 'angry', mouth: 'neutral' },
-  kevin:    { skin: 'light', hairc: [58, 44, 30],   hair: 'styleBald',   cloth: 'polo', c1: [110, 140, 180], c2: [90, 120, 160], brow: 'flat', mouth: 'neutral', heavy: true },
-  angela:   { skin: 'light', hairc: [186, 154, 90], hair: 'styleBun',    cloth: 'cardigan', c1: [150, 146, 170], c2: [235, 233, 226], brow: 'angry', mouth: 'frown', lashes: true },
-  oscar:    { skin: 'tan',   hairc: [28, 22, 18],   hair: 'styleShort',  hairargs: { part: 'L' }, cloth: 'sweater', c1: [122, 60, 74], brow: 'flat', mouth: 'smile' },
-  stanley:  { skin: 'dark',  hairc: [60, 54, 48],   hair: 'styleRecede', cloth: 'dressshirt', c1: [150, 120, 86], tie: [120, 78, 52], glasses: true, facial: 'mustache', brow: 'flat', mouth: 'neutral', heavy: true },
-  phyllis:  { skin: 'light', hairc: [196, 162, 110], hair: 'styleCurly', cloth: 'blouse', c1: [202, 160, 192], glasses: true, brow: 'soft', mouth: 'smile', lashes: true, heavy: true },
-  andy:     { skin: 'light', hairc: [74, 51, 32],   hair: 'styleShort',  hairargs: { part: 'R' }, cloth: 'polo', c1: [176, 65, 58], c2: [150, 50, 46], brow: 'raised', mouth: 'smile' },
-  kelly:    { skin: 'tan',   hairc: [24, 18, 22],   hair: 'styleFrame',  hairargs: { length: 20, vol: 1 }, cloth: 'blouse', c1: [212, 90, 158], brow: 'soft', mouth: 'smile', blush: true, lashes: true },
-  ryan:     { skin: 'light', hairc: [42, 32, 24],   hair: 'styleSpiky',  cloth: 'suit', c1: [58, 58, 68], tie: [40, 40, 50], brow: 'flat', mouth: 'neutral' },
-  toby:     { skin: 'light', hairc: [106, 90, 66],  hair: 'styleShort',  hairargs: { part: 'L', recede: 1 }, cloth: 'dressshirt', c1: [150, 150, 120], facial: 'mustacheSm', brow: 'soft', mouth: 'frown' },
-  creed:    { skin: 'light', hairc: [170, 166, 156], hair: 'styleBald',   cloth: 'dressshirt', c1: [126, 130, 96], facial: 'stubble', brow: 'flat', mouth: 'neutral' },
-  meredith: { skin: 'light', hairc: [154, 82, 46],  hair: 'styleMessy',  hairargs: { length: 15 }, cloth: 'blouse', c1: [176, 86, 74], brow: 'raised', mouth: 'smile', lashes: true },
+  michael:  { skin: 'dark',  hairc: [172, 172, 176], hair: 'styleCurly',  cloth: 'cardigan',   c1: [52, 118, 112], c2: [236, 218, 164], glasses: true, facial: 'goatee', brow: 'raised', mouth: 'grin' },
+  jim:      { skin: 'tan',   hairc: [118, 58, 40],   hair: 'styleBun',    cloth: 'polo',       c1: [88, 84, 140], c2: [214, 170, 70], facial: 'mustacheSm', brow: 'soft', mouth: 'neutral' },
+  pam:      { skin: 'brown', hairc: [26, 24, 30],    hair: 'styleSpiky',  cloth: 'sweater',    c1: [214, 168, 62], glasses: true, brow: 'angry', mouth: 'smile', lashes: true },
+  dwight:   { skin: 'tan',   hairc: [58, 44, 32],    hair: 'styleFrame',  hairargs: { length: 20, vol: 1 }, cloth: 'dressshirt', c1: [86, 150, 160], tie: [96, 52, 88], facial: 'stubble', brow: 'soft', mouth: 'grin' },
+  kevin:    { skin: 'dark',  hairc: [30, 26, 28],    hair: 'styleMessy',  hairargs: { length: 10 }, cloth: 'suit', c1: [206, 198, 172], tie: [40, 110, 120], facial: 'goatee', brow: 'raised', mouth: 'smile' },
+  angela:   { skin: 'brown', hairc: [34, 30, 34],    hair: 'styleBald',   hairargs: { recede: 1 }, cloth: 'cardigan', c1: [190, 110, 128], c2: [96, 64, 104], brow: 'flat', mouth: 'frown', blush: true, lashes: true },
+  oscar:    { skin: 'light', hairc: [34, 28, 30],    hair: 'styleFloppy', cloth: 'blouse',     c1: [48, 78, 128], glasses: true, brow: 'soft', mouth: 'smile' },
+  stanley:  { skin: 'brown', hairc: [66, 48, 36],    hair: 'styleRecede', cloth: 'sweater',    c1: [184, 102, 62], facial: 'stubble', brow: 'angry', mouth: 'grin', heavy: true },
+  phyllis:  { skin: 'light', hairc: [196, 168, 120], hair: 'styleCurly',  cloth: 'blouse',     c1: [178, 150, 186], glasses: true, brow: 'soft', mouth: 'smile', lashes: true, heavy: true },
+  andy:     { skin: 'light', hairc: [110, 70, 40],   hair: 'styleShort',  hairargs: { part: 'R' }, cloth: 'polo', c1: [168, 70, 62], c2: [140, 54, 50], brow: 'raised', mouth: 'smile' },
+  kelly:    { skin: 'tan',   hairc: [24, 18, 22],    hair: 'styleFrame',  hairargs: { length: 17, vol: 2 }, cloth: 'cardigan', c1: [214, 106, 98], c2: [244, 238, 230], brow: 'soft', mouth: 'smile', blush: true, lashes: true },
+  ryan:     { skin: 'light', hairc: [64, 44, 30],    hair: 'styleSpiky',  cloth: 'suit',       c1: [40, 52, 84], tie: [96, 104, 124], brow: 'flat', mouth: 'neutral' },
+  toby:     { skin: 'light', hairc: [124, 106, 86],  hair: 'styleShort',  hairargs: { part: 'L', recede: 1 }, cloth: 'dressshirt', c1: [150, 156, 124], glasses: true, brow: 'soft', mouth: 'neutral' },
+  creed:    { skin: 'light', hairc: [170, 166, 156], hair: 'styleBald',   cloth: 'dressshirt', c1: [120, 128, 92], facial: 'mustache', brow: 'raised', mouth: 'smile' },
+  meredith: { skin: 'light', hairc: [154, 82, 46],   hair: 'styleMessy',  hairargs: { length: 15 }, cloth: 'blouse', c1: [176, 86, 74], brow: 'raised', mouth: 'smile', lashes: true },
 };
 
 /** The face/hair group (head → face → facial hair → hair → glasses), no clothing. */
@@ -529,6 +549,7 @@ function compose(r: Recipe): Buf {
   CUR_W = PORTRAIT_W; CUR_H = PORTRAIT_H;
   const buf = new Uint8ClampedArray(PORTRAIT_W * PORTRAIT_H * 4);
   drawClothing(buf, r.cloth, r.c1, r.c2, r.tie, r.skin, r.heavy ?? false);
+  drawOqvianAccent(buf, false);
   collarNeck(buf, r.skin);
   drawHeadGroup(buf, r);
   outlinePass(buf);
@@ -588,4 +609,19 @@ export function paintPortrait(ctx: CanvasRenderingContext2D, name: OfficeCharact
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, PORTRAIT_W * scale, PORTRAIT_H * scale);
   ctx.drawImage(stage, 0, 0, PORTRAIT_W, PORTRAIT_H, 0, 0, PORTRAIT_W * scale, PORTRAIT_H * scale);
+}
+
+/** Plain look data for non-pixel renderers (the 3D office). Colours are 0-255 RGB. */
+export interface PersonLook {
+  skin: RGB; hair: RGB; hairStyle: string; hairLength?: number;
+  cloth: string; shirt: RGB; shirt2?: RGB; tie?: RGB; pants: RGB;
+  glasses: boolean; facial?: string; lashes: boolean; heavy: boolean;
+}
+export function personLook(name: OfficeCharacterName): PersonLook {
+  const r = RECIPES[name] ?? RECIPES.jim;
+  return {
+    skin: SKIN[r.skin].base as RGB, hair: r.hairc, hairStyle: r.hair, hairLength: r.hairargs?.length,
+    cloth: r.cloth, shirt: r.c1, shirt2: r.c2, tie: r.tie, pants: defaultPants(r),
+    glasses: !!r.glasses, facial: r.facial, lashes: !!r.lashes, heavy: !!r.heavy,
+  };
 }

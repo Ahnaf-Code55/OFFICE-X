@@ -5,6 +5,7 @@ import { Application, Container, Graphics, Text, Ticker, Texture } from 'pixi.js
 import 'pixi.js/unsafe-eval';
 import { useStore, type Agent } from '@/store/store';
 import { TiledMapRenderer } from './TiledMapRenderer';
+import { Office3D, type Person3DState } from '../office3d/Office3D';
 import { Camera } from './Camera';
 import { Character, paintCup } from './Character';
 import { DeskScreen } from './DeskScreen';
@@ -146,6 +147,30 @@ const CHEER_KEYS = [
   'office.cheer.6'
 ] as const;
 
+/** OQVIAN grade: the vendored tilesets paint floors/walls in a muted sage green that reads as
+ *  Minecraft grass. Pull only those muted greens/teals (saturation < 0.32) to a warm
+ *  office-carpet greige, keeping brightness. Plants and other saturated colours are untouched.
+ *  ponytail: one pass at load; bake edited PNGs instead if the load cost ever shows up. */
+function warmNeutral(img: HTMLImageElement): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const ctx = c.getContext('2d')!;
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height);
+  const p = d.data;
+  for (let i = 0; i < p.length; i += 4) {
+    const r = p[i], g = p[i + 1], b = p[i + 2];
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    if (max === min || g < r || g < b) continue; // not green-dominant
+    const s = (max - min) / max;
+    if (s < 0.07 || s > 0.32) continue;
+    // greige: same brightness, slight warm cast (r > g > b)
+    p[i] = max; p[i + 1] = Math.round(max * 0.965); p[i + 2] = Math.round(max * 0.91);
+  }
+  ctx.putImageData(d, 0, 0);
+  return c;
+}
+
 /** Load a texture via an <img> element. Unlike Pixi's Assets.load(), this
  *  handles extension-less data: URLs (Vite inlines small assets like the a5
  *  tileset as base64), which the Assets resolver fails to type-detect. */
@@ -153,7 +178,7 @@ function loadTexture(url: string): Promise<Texture> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      const tex = Texture.from(img);
+      const tex = Texture.from(warmNeutral(img));
       tex.source.scaleMode = 'nearest';
       resolve(tex);
     };
@@ -190,6 +215,14 @@ function firstWords(prompt: string | undefined, maxWords = 6, maxChars = 42): st
 export function OfficeFloor() {
   const { t, i18n } = useTranslation();
   const hostRef = useRef<HTMLDivElement | null>(null);
+  // Optional 3D view of the same simulation (the 2D scene keeps running underneath).
+  const [view3d, setView3d] = useState(() => {
+    try { return window.localStorage.getItem('officex.view3d') === '1'; } catch { return false; }
+  });
+  const toggle3d = () => setView3d((v) => {
+    try { window.localStorage.setItem('officex.view3d', v ? '0' : '1'); } catch { /* disabled storage */ }
+    return !v;
+  });
   const appRef = useRef<Application | null>(null);
   const mountIdRef = useRef(0);
   // Bumped when the WebGL context is evicted; a dep of the effect below, so the
@@ -2013,7 +2046,30 @@ export function OfficeFloor() {
           }
         }
       };
+      let o3d: Office3D | null = null;
+      if (view3d) {
+        try {
+          o3d = new Office3D(host, mapRenderer.getMap(), mapRenderer.getTilesetTextures(), (id) => useStore.getState().select(id), (x, y) => mapRenderer.isWalkable(x, y));
+          app.canvas.style.display = 'none';
+          app.stage.renderable = false; // the 2D scene keeps simulating but stops drawing under the 3D view
+          (app as any).__off3d = () => o3d?.dispose();
+        } catch (err) { console.error('[OfficeFloor] 3D view failed, staying 2D', err); o3d = null; }
+      }
+      const tick3d = (ticker: Ticker) => {
+        if (!o3d) return;
+        const list: Person3DState[] = [];
+        const agents = useStore.getState().agents;
+        for (const rt of runtimes.values()) {
+          const c = rt.character;
+          const p = c.getPixelPosition();
+          const a = agents.find((q) => q.id === c.agentId);
+          const dot = a?.status === 'typing' || a?.status === 'compacting' || a?.status === 'looping' ? '#34d399' : a?.status === 'waiting' ? '#fbbf24' : '#9aa3ad';
+          list.push({ id: c.agentId, name: rt.charName, x: p.x, y: p.y, anim: c.getAnimation(), dir: c.getFacing(), sitting: c.isSitting(), visible: c.isVisible, label: a?.name ?? rt.charName, dot });
+        }
+        o3d.frame(list, ticker.deltaMS / 1000);
+      };
       app.ticker.add(onTick);
+      app.ticker.add(tick3d);
       // init() is async: the floor may already be behind a fullscreen terminal by
       // the time we get here, and app.init() starts the ticker itself.
       if (pausedRef.current) app.ticker.stop();
@@ -2076,13 +2132,14 @@ export function OfficeFloor() {
         try { (a as any).__offRemotePresence?.(); } catch { /* noop */ }
         try { (a as any).__offOrgPresence?.(); } catch { /* noop */ }
         try { (a as any).__offMessage?.(); } catch { /* noop */ }
+        try { (a as any).__off3d?.(); } catch { /* noop */ }
         try { clearInterval((a as any).__taskBoardPoll); } catch { /* noop */ }
         safeDestroy(a);
       }
       appRef.current = null;
       while (host.firstChild) host.removeChild(host.firstChild);
     };
-  }, [officeTheme, viewFloor, glGeneration, i18n.language]);
+  }, [officeTheme, viewFloor, glGeneration, i18n.language, view3d]);
 
   const selectedAgent = selectedAgentId
     ? useStore.getState().agents.find((agent) => agent.id === selectedAgentId)
@@ -2117,6 +2174,14 @@ export function OfficeFloor() {
               {floor === 1 ? '1 · Lobby' : floor === 2 ? '2 · Leadership' : '3 · Product / AI'}
             </button>
           ))}
+          <button type="button" aria-label="Toggle 3D view" aria-pressed={view3d} onClick={toggle3d}
+            style={{
+              border: '1px solid #9bb7c6', padding: '4px 6px', cursor: 'pointer',
+              background: view3d ? '#d7e5bb' : '#263e50',
+              color: view3d ? '#142d44' : '#f4eddc', fontFamily: 'inherit', fontSize: 'inherit'
+            }}>
+            {view3d ? '3D' : '2D'}
+          </button>
           {selectedAgent && floorForAgent(selectedAgent) !== viewFloor && (
             <button type="button" aria-label={`Move ${selectedAgent.name} to floor ${viewFloor}`}
               onClick={() => useStore.getState().updateAgent(selectedAgent.id, { floor: viewFloor })}
