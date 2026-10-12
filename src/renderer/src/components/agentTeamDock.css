@@ -1,0 +1,64 @@
+/* The team drawer belongs exclusively to the right agent workspace. */
+.aw-team-dock { position: relative; flex-shrink: 0; margin: 0 14px 8px; font-size: 11px; min-width: 0; }
+.at-toolbar { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; border-top: 1px solid var(--aw-line); padding-top: 8px; }
+.at-toolbar button, .at-toolbar select { border: 1px solid var(--aw-line); background: var(--aw-surface); border-radius: 6px; padding: 6px 8px; min-height: 29px; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; max-width: 100%; }
+.at-toolbar button[data-active="true"] { background: var(--aw-selected); color: var(--aw-selected-text); border-color: #dcae49; }
+.at-toolbar .at-add { margin-inline-start: auto; }
+.at-tab > span { color: var(--aw-muted); font-size: 10px; }
+.at-breadcrumb { display: flex; align-items: center; gap: 5px; padding-top: 6px; color: var(--aw-muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.at-breadcrumb strong { color: var(--aw-text); }
+.at-breadcrumb > span:first-child { margin-inline-end: 3px; }
+.at-panel { position: absolute; z-index: 30; bottom: calc(100% + 8px); inset-inline: 0; display: flex; flex-direction: column; max-height: min(56vh, 490px); border: 1px solid var(--aw-line); border-radius: 12px; background: var(--aw-surface); box-shadow: 0 12px 35px #0003; overflow: hidden; }
+.at-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 13px 14px 9px; gap: 8px; }
+.at-panel-header strong { font-size: 14px; }
+.at-panel-header span { display: block; color: var(--aw-muted); margin-top: 3px; font-size: 10px; }
+.at-panel-header button, .at-search button { background: transparent; border: 0; padding: 3px 7px; border-radius: 4px; font-size: 18px; }
+.at-search { margin: 0 12px 9px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--aw-line); background: var(--aw-input); border-radius: 7px; padding: 7px 9px; color: var(--aw-muted); }
+.at-search input { min-width: 0; width: 100%; border: 0; outline: 0; font: inherit; color: var(--aw-text); background: transparent; }
+.at-search:focus-within { outline: 2px solid #dcae49; outline-offset: 1px; }
+.at-search input::placeholder { color: var(--aw-muted); }
+.at-scroll { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 0 8px 9px; min-height: 0; }
+.at-side + .at-side { margin-top: 10px; border-top: 1px solid var(--aw-line); padding-top: 7px; }
+.at-side h3 { display: flex; justify-content: space-between; gap: 5px; padding: 6px 6px; margin: 0; font-size: 11px; font-weight: 600; }
+.at-side h3 small { font-size: 10px; font-weight: 400; color: var(--aw-muted); }
+.at-row { display: flex; align-items: center; gap: 5px; margin: 2px 0; margin-inline-start: calc(var(--at-depth) * 12px); padding: 4px 7px 4px 2px; border: 1px solid transparent; border-radius: 7px; min-width: 0; }
+.at-row:hover { background: var(--aw-input); }
+.at-row[data-selected="true"] { background: var(--aw-selected); border-color: #dcae4980; }
+.at-expand, .at-leaf { width: 17px; flex-shrink: 0; text-align: center; }
+.at-expand { padding: 2px 0; border: 0; background: transparent; font-size: 18px !important; }
+.at-expand:disabled { opacity: 1 !important; }
+.at-leaf::after { content: '·'; color: var(--aw-muted); }
+.at-person { line-height: 1.2; flex: 1; min-width: 0; text-align: start; border: 0; padding: 0; background: transparent; }
+.at-person-title { line-height: 16px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.at-person-title > canvas { width: 10px !important; height: 16px !important; object-fit: contain; flex-shrink: 0; }
+.at-person strong { font-weight: 600; font-size: 12px; overflow-wrap: anywhere; }
+.at-role { line-height: 11px; border: 1px solid var(--aw-line); border-radius: 4px; padding: 1px 4px; text-transform: uppercase; letter-spacing: .04em; font-size: 8px; color: var(--aw-muted); }
+.at-job, .at-model { display: block; color: var(--aw-muted); font-size: 10px; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-model { line-height: 12px; margin-top: 1px; font-size: 9px; }
+.at-status { color: var(--aw-muted); display: flex; align-items: center; gap: 4px; font-size: 9px; white-space: nowrap; flex-shrink: 0; }
+.at-status i { width: 5px; height: 5px; border-radius: 50%; background: #9298a1; }
+.at-status[data-status="idle"] i { background: #5dab83; }
+.at-status[data-status="working"] i, .at-status[data-status="thinking"] i { background: #67a9df; }
+.at-status[data-status="blocked"] i, .at-status[data-status="waiting"] i { background: #d6aa47; }
+.at-row[data-source="planned"] .at-person strong { color: var(--aw-muted); }
+.at-panel-footer { border-top: 1px solid var(--aw-line); padding: 8px 12px; color: var(--aw-muted); font-size: 9px; line-height: 1.5; }
+.at-detail { border-top: 1px solid var(--aw-line); margin: 10px 4px 0; padding-top: 10px; line-height: 1.5; }
+.at-detail summary { cursor: pointer; font-weight: 600; }
+.at-detail p { font-size: 10px; color: var(--aw-muted); overflow-wrap: anywhere; }
+.at-goal { white-space: pre-wrap; }
+.at-detail button { border: 1px solid var(--aw-line); border-radius: 5px; background: var(--aw-input); padding: 5px 8px; font-size: 10px; }
+.at-assignment { display: grid; gap: 8px; margin-top: 10px; }
+.at-assignment > label { display: grid; gap: 4px; }
+.at-assignment select, .at-assignment input:not([type="checkbox"]) { min-width: 0; width: 100%; border: 1px solid var(--aw-line); border-radius: 4px; background: var(--aw-input); color: var(--aw-text); padding: 5px; font: inherit; }
+.at-assignment fieldset { display: grid; gap: 4px; border: 1px solid var(--aw-line); border-radius: 4px; }
+.at-assignment fieldset label { display: flex; gap: 5px; align-items: center; }
+.at-empty { color: var(--aw-muted); text-align: center; padding: 15px; }
+@container (max-width: 480px) {
+  .aw-team-dock { margin-inline: 8px; }
+  .at-toolbar { gap: 4px; }
+  .at-toolbar button, .at-toolbar select { padding-inline: 5px; font-size: 10px; }
+  .at-role { font-size: 7px; }
+  .at-row { gap: 2px; margin-inline-start: calc(var(--at-depth) * 7px); padding-inline-end: 3px; }
+  .at-status { font-size: 8px; }
+  .at-person strong { font-size: 11px; }
+}

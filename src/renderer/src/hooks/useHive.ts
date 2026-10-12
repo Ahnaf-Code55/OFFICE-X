@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { withStandingGoal } from '@shared/standingGoal';
 import { useStore, type Agent, type QueuedMessage, type StationKind, type ToolKind } from '@/store/store';
 import {
   buildSpawnCommand,
@@ -50,26 +51,6 @@ const BOOT_GRACE_MS = 35_000;
 // long enough for the TUI to finish painting and surface any permission prompt.
 // submitToPty additionally waits for the terminal's readiness handshake.
 const SEED_BOOT_MS = 12_000;
-
-/** Hive-aware / hooks-bridge engines get standing goals via HookServer
- *  (SessionStart + UserPromptSubmit). Cursor and other no-hook engines need the
- *  goal prepended onto queued PTY deliveries so an Edit Agent save still lands
- *  on the next drain cycle without a restart. */
-function usesHookStandingGoal(agent: Agent): boolean {
-  const provider = inferAgentProvider(agent.command, agent.provider);
-  const preset = providerPreset(provider);
-  if (preset.hiveAware) return true;
-  return bridgeOf(provider)?.kind === 'hooks';
-}
-
-/** Prepend `<goal>…</goal>` for engines that cannot inject via hooks. Reads the
- *  live store field, so a just-saved goal is picked up on the next queue flush. */
-function withStandingGoal(agent: Agent, text: string): string {
-  const goal = agent.goal?.trim();
-  if (!goal || usesHookStandingGoal(agent)) return text;
-  if (text.includes('<goal>')) return text;
-  return `<goal>\n${goal}\n</goal>\n\n${text}`;
-}
 
 // The first thing Michael (god) is told on a fresh spawn — orient him and put
 // him to work running the floor. Kept terse and action-oriented.
