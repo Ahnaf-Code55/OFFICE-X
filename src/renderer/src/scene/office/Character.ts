@@ -99,6 +99,9 @@ export class Character {
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
 
   private thoughtBubble: ThoughtBubble;
+  private thoughtText = '';
+  private thoughtTool: string | undefined;
+  private thoughtOn = false;
   private workGlow: Graphics;
   private workGlowElapsed = 0;
   private glowOn = false;
@@ -344,11 +347,19 @@ export class Character {
   /** Show what the agent is doing right now in the thought cloud above its head.
    *  Empty text renders an animated "…" (thinking); `tool` adds a small glyph. */
   showThought(text: string, tool?: string): void {
+    this.thoughtText = text; this.thoughtTool = tool; this.thoughtOn = true;
     this.thoughtBubble.show(text, tool);
   }
 
+  /** Current thought, for non-Pixi views (the 3D office). */
+  getThought(): { text: string; tool?: string; visible: boolean } {
+    return { text: this.thoughtText, tool: this.thoughtTool, visible: this.thoughtOn };
+  }
+  getStatusGlyph(): StatusGlyph { return this.statusGlyph; }
+
   /** Fade the thought cloud out after a short linger — the agent went quiet. */
   hideThought(): void {
+    this.thoughtOn = false;
     this.thoughtBubble.startLinger();
   }
 
