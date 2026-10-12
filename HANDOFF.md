@@ -1,37 +1,45 @@
 # OFFICE-X handoff
 
-Updated: 2026-10-12
+Updated: 2026-10-01
 
-## Goal and scope
-OQVIAN OFFICE-X with shared offices and owner-controlled permissions, Linux and Windows.
-Current branch: `trahman/agent-workspace-ui`, based on main `1f6da34c`.
-Turjo approved the dark/light agent-workspace mockup; implementation is local for review.
-The existing office floor, scene code and artwork are unchanged.
+## Goal
+Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring and control their own AI agents, with reciprocal trust and owner controlled permissions.
 
-## Agent workspace
-- Floor stays left; a shared agent sidebar and conversation workspace sit right.
-- Every selected agent opens its own identity, model, composer and session views.
-- Sidebar retains tasks, approvals, monitor, memory, skills, activity and office tools.
-- More tools retains Git, message threads, traces, lifecycle controls and roster arrangement.
-- Composer retains attachments, drafts, queue delivery and steering; model editing uses the existing restart semantics.
-- Compact agent dock replaces the floor-wide strip; team restoration still runs without a selected agent.
-- Dark/light controls update both the workspace and existing terminal theme.
-- New chat queues the engine's reset command after confirmation; native trust is never auto-approved.
+## Current checkout
+- Source repo: `officex/shared-offices` (see `git log -1`).
+- OQVIAN delivery PR: [Ahnaf-Code55/OQVIAN#1](https://github.com/Ahnaf-Code55/OQVIAN/pull/1), open and unmerged at `69b1e56`.
+- Preserve both OQVIAN and OFFICE-X branding. Linux and Windows x64 are in scope; macOS is not.
 
-## Earlier response fixes retained
-Coordinator routing and one-owner delegation prompts, manual Codex approval defaults,
-native permission guards, safe startup queues and mounted-filesystem socket fallback.
-The earlier fix commit is retained as `a754d26c` on this branch.
+## Who owns what (claim before editing; see CONTRIBUTING "Working as a pair")
+- Ahnaf (@Ahnaf-Code55): TBD
+- Turjo (@TRahman2414): agent response/startup fixes and right agent workspace; floor/scene files belong to Ahnaf. Details: [agent workspace handoff](docs/AGENT-WORKSPACE.md).
 
-## Verification
-Typecheck and production build passed; 972 tests: 970 passed, two skipped; whitespace check passed.
-Live UI: all seven agents, draft preservation, 18 navigation views, model editor and both themes checked.
-Responsive checks passed at 1280, 1024 and 900 pixels; no renderer exceptions during acceptance checks.
-Screenshots and verification records: `../ui-review`; personal profile and logs: `../Turjo-Office`.
-Live replies/delegation await human CLI trust approval. Antigravity output uses Terminal;
-structured conversation rendering retains the existing Claude/Codex transcript support.
+## Implemented
+- Virtual office from Munder Difflin, OQVIAN roles and working modes, plus Shared Office with reciprocal invites, pinned fingerprints, encrypted libp2p messages, separate teammate sections, and revocable access.
+- Access levels support task requests, delegated agent prompts, and full control with opt-in terminal output sharing.
+- Direct P2P and self-hosted Circuit Relay v2 are implemented; no permanent managed relay endpoint is configured.
+- Codex remote launch now moves `--add-dir` roots to app-server config; local commit `0c1b5b89`, PR commit `69b1e56`.
 
-## Remaining work
-Turjo reviews the running local interface before requesting adjustments or GitHub push.
-Nothing pushed. Merge requires green CI and Ahnaf approval; never push main directly.
-Two-computer calls and shared-office acceptance gaps remain outside this change.
+## Verified
+- Codex remote regression tests (7), typecheck, focused suite (919), and local Linux AppImage build passed during the prior fix.
+- PR #1 Linux verification, Linux AppImage, and Windows x64 installer jobs passed at `69b1e56`.
+- A temporary relay previously passed an external circuit probe, but no real two-computer acceptance has been completed.
+
+## Open findings
+- Keyring fixed 2026-09-27: gnome-keyring installed, `org.freedesktop.secrets` store/lookup verified. App-level identity creation still unchecked.
+- Temp relay up 2026-09-27 (Node 26, persistent key `~/.local/share/officex-relay/relay.key`) behind a Cloudflare quick tunnel; external libp2p WSS dial passed. Address (dies when tunnel restarts): `/dns4/reducing-caribbean-posters-murray.trycloudflare.com/tcp/443/wss/p2p/12D3KooWSzm9JMyup878piqT7dKeRSqoxpTgU3e7c2YzD9uzcVMY`. Needs a VPS/named tunnel for permanence; relay officially wants Node 22.
+- Two-computer invitation, control, output sharing, and revocation acceptance with the friend's Bazzite device remain unverified.
+
+- 2026-10-01: remote `chat` from task-requests teammates no longer reaches local agents (`src/main/chat.ts`, `index.ts`; test in `test/team-chat.test.cjs`); voice download progress no longer double-emits (`voice/assets.ts`); stale `opencode-go/deepseek-flash` removed from `docs/model-catalog.json`. Focused suite 933/936: `proc-kill` fails only in containers without a zombie-reaping PID 1.
+- 2026-10-01: human-to-human calls: `rtc-signal` action (`teamProtocol.ts`, `teamActions.ts` parseRtcSignal, `teamDispatch.ts`), IPC `meeting:sendRtcSignal`/`meeting:rtcSignal`, renderer `meeting/useTeammateCall.ts` + call/accept buttons in `MeetingRoom.tsx`; tests `test/rtc-signal.test.cjs`. STUN only (no TURN), rings only while the meeting room is open; never tried with real audio.
+- 2026-10-01 usage fix: team chat no longer fans out (un-mentioned human msg → god only, @mentions → named only, agent posts → mentioned only, MAX_AI_TURNS 6); worker rule 1b "post plan to chat first" removed; god told to use the fewest agents. Defaults: Ponytail + new Caveman skill (`resources/skills/caveman`) always on via injected prompt rule 1e; auto-compact at 150k (`src/shared/autoCompact.ts`: Claude env pct, Codex `-c`, app trigger absolute floor). Headroom MCP was already default-on for Claude (needs `pip install "headroom-ai[mcp]"`).
+- 2026-10-01: OpenCode agents showed a blank terminal: the app ran `opencode mini …`, but `mini` is a FLAG in OpenCode 1.18.x (`opencode mini` = chdir into ./mini → exit). Now `opencode --mini …`; saved argv repaired by `withOpenCodeMiniArgs` (`agentProvider.ts`). Verified the real 1.18.34 CLI starts the mini TUI with --model/--prompt.
+- 2026-10-01: Slack prompt planner (ChatGPT group chats were removed): Settings → Slack → "Prompt planner" picks an agent (meant: Codex signed in with ChatGPT); Slack messages then go to it with `buildPlannerProtocol` (`src/main/slackPlanner.ts`): knows the sender (`ev.user` → `users.info`, optional `users:read` scope), writes a prompt for that person only, keeps `<hive>/prompt-board.md` so two people's branches/files don't clash, replies in-thread. Untested against real Slack.
+- 2026-10-01: orchestrator spawning throttled (`src/shared/workerSpawnPolicy.ts`): max 3 workers at once (config clamped, default 3), queued spawn-requests start ONE per tick ≥60 s apart; god prompt + PROTOCOL say so.
+- Still missing from PLAN.md: image attach in MeetingRoom, per-AI voices, Phase 5 review notes.
+
+## NEXT TASK
+Run a real two-computer call in the meeting room (accept, mute, hang up). Enter the relay address in Shared Office → Self-hosted on both devices, then run reciprocal invite and cross-device control acceptance with the Bazzite teammate and fix any observed failure.
+
+## Handoff practice
+Read this note and `git log -5`, inspect only files needed for the task, and update this note with changed files, verification, open issues, and the exact next step before handing off; keep it under 40 lines and commit working steps.
