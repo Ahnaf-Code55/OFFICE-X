@@ -1,0 +1,15 @@
+2026-10-12 | codex | characters redraw (portraitArt.ts)
+2026-10-12 | claude | environment grade (TiledMapRenderer.ts, themeRegistry.ts)
+2026-10-12 | codex | 8 unique character recipes (first draft, toned to natural colours by claude)
+2026-10-12 | claude | 7 unique character recipes + natural-colour pass
+2026-10-12 | codex | Person3D.ts (3D low-poly people)
+2026-10-12 | claude | Office3D.ts + wiring + 2D/3D toggle
+2026-10-12 | codex | Person3D v2 (better people)
+2026-10-12 | opencode | NameTag3D.ts (name tags)
+2026-10-12 | claude | furniture volumes, lighting, camera fit, wiring
+2026-10-13 | opencode | ThoughtBubble3D.ts
+2026-10-13 | codex | FurniturePlanner.ts + Furniture3D.ts + planner test
+2026-10-13 | claude | teammates, bubbles wiring, camera, quality, furniture integration, docs
+2026-10-13 | opencode | Person3D.ts (smooth rig, breathing, thinking pose)
+2026-10-13 | opencode | Furniture3D/Planner modern look, shared geometry, table fix (Codex was out of quota)
+2026-10-13 | claude | time-of-day lighting, smaller shadow map, integration, checks
