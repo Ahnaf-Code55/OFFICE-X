@@ -348,6 +348,12 @@ function repairLiteralLineBreaksInJsonStrings(raw: string): { text: string; chan
   return { text, changed };
 }
 
+/** Standing token-saving rules for every agent, any provider. Static text: keeps the
+ *  injected prefix prompt-cache-stable. Headroom/ponytail/caveman are named as
+ *  habits, so they work even where the matching skill or MCP server is absent. */
+const TOKEN_SAVER_LINE =
+  'TOKEN SAVING (always on): (1) caveman: reply in the fewest words that stay correct, no preamble, no recap, no restating the question. (2) ponytail: write the minimum code that works, reuse what exists, add nothing speculative. (3) headroom: read only the files and lines you need, pipe long command output through tail or grep, and if a headroom_compress tool is available use it on large outputs. Skip a rule only when the human asks for the long form.';
+
 export class HiveManager {
   /**
    * @param getHome  Lazily resolve harnessHome so the hive follows config changes.
@@ -1518,6 +1524,7 @@ export class HiveManager {
       guardrailsLine,
       memoryLine,
       knowledgeLine,
+      TOKEN_SAVER_LINE,
       godLine,
       spawnQueueLine,
       outsideLine,
