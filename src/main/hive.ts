@@ -43,6 +43,7 @@ import { preferredAgentRole } from '../shared/agentRole';
 import { mergeTaskLedger } from '../shared/taskLedger';
 import { expandTilde } from './fs';
 import { resolveGodName } from '../shared/godIdentity';
+import { preserveCodexProjectTrust } from './codexProjectTrust';
 
 /** The subset of HarnessConfig the hive consumes for the default-MCP merge.
  *  Kept as a local shape so hive.ts never imports the foundation-owned config
@@ -2155,6 +2156,10 @@ export class HiveManager {
       const shim = this.shimPath();
       let config = existsSync(join(userHome, 'config.toml'))
         ? readFileSync(join(userHome, 'config.toml'), 'utf8') : '';
+      const workerConfigPath = join(home, 'config.toml');
+      if (existsSync(workerConfigPath)) {
+        config = preserveCodexProjectTrust(config, readFileSync(workerConfigPath, 'utf8'));
+      }
       if (shim) {
         const events = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop',
           'SessionStart', 'UserPromptSubmit', 'PreCompact', 'PostCompact'];

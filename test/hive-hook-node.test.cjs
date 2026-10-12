@@ -24,6 +24,7 @@ const { spawn } = require('node:child_process');
 const loadTs = require('./load-ts.cjs');
 
 const { HiveManager } = loadTs('src/main/hive.ts');
+const { parse: parseToml } = require('toml');
 
 const POSIX = process.platform !== 'win32';
 const STRIPPED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -52,6 +53,37 @@ function isolatedHomes(t, prefix, root) {
 
 const launcherIn = (home) =>
   path.join(home, 'hive', 'bin', POSIX ? 'hive-node' : 'hive-node.cmd');
+
+test('Codex folder decisions survive repeated hook installation without duplicating hooks', (t) => {
+  const { home, harness } = isolatedHomes(t);
+  fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
+  const globalPath = path.join(home, '.codex/config.toml');
+  fs.writeFileSync(globalPath, 'model = "initial"\n');
+  const hive = new HiveManager(() => harness);
+  hive.ensureHive();
+  const agentDir = path.join(harness, 'hive/agents/a1');
+  const codexHome = hive.installCodexHooks(agentDir, 'a1');
+  const configPath = path.join(codexHome, 'config.toml');
+  const project = path.join(harness, 'Office space');
+  // Codex persists the human's decision in its isolated user-layer config.
+  fs.appendFileSync(configPath, `\n[projects.${JSON.stringify(project)}]\ntrust_level = "trusted"\n`);
+  fs.appendFileSync(configPath, '\n[projects."/declined"]\ntrust_level = "untrusted"\n');
+  fs.writeFileSync(globalPath, 'model = "updated"\n[projects."/global"]\ntrust_level = "trusted"\n');
+  for (let launch = 0; launch < 3; launch++) {
+    hive.installCodexHooks(agentDir, 'a1');
+    const config = parseToml(fs.readFileSync(configPath, 'utf8'));
+    assert.equal(config.model, 'updated', 'global settings still refresh');
+    assert.equal(config.projects[project].trust_level, 'trusted');
+    assert.equal(config.projects['/declined'].trust_level, 'untrusted');
+    assert.equal(config.projects['/global'].trust_level, 'trusted');
+    assert.equal(Object.keys(config.hooks).length, 8);
+    for (const hooks of Object.values(config.hooks)) assert.equal(hooks.length, 1);
+  }
+  fs.writeFileSync(globalPath, `[projects.${JSON.stringify(project)}]\ntrust_level = "untrusted"\n`);
+  hive.installCodexHooks(agentDir, 'a1');
+  assert.equal(parseToml(fs.readFileSync(configPath, 'utf8')).projects[project].trust_level, 'untrusted',
+    'an explicit global decision takes precedence');
+});
 
 /** Every file under `dir`. */
 function walk(dir, out = []) {
