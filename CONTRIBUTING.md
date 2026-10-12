@@ -58,6 +58,10 @@ npm install        # postinstall rebuilds node-pty against Electron's ABI
 npm run dev        # live-reloading Electron build
 ```
 
+Optional, but recommended: every new agent gets the ponytail and caveman skills
+automatically (they ship with the app). The headroom token saver needs a one-time
+`pipx install "headroom-ai[mcp]"`; once `headroom` is on your PATH, agents pick it up.
+
 > [!IMPORTANT]
 > **The most common setup failure is the native `node-pty` rebuild.** The
 > `postinstall` script runs `electron-rebuild` so `node-pty` matches Electron's

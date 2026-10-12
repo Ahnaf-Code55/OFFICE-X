@@ -23,7 +23,7 @@ import {
   readdirSync, statSync, lstatSync, realpathSync, rmSync, appendFileSync,
   symlinkSync, unlinkSync, copyFileSync, cpSync, chmodSync
 } from 'node:fs';
-import { join, dirname, basename, isAbsolute, relative } from 'node:path';
+import { join, dirname, basename, isAbsolute, relative, delimiter } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, createHash } from 'node:crypto';
@@ -347,6 +347,18 @@ function repairLiteralLineBreaksInJsonStrings(raw: string): { text: string; chan
 
   return { text, changed };
 }
+
+/** Standing token-saving rules for every agent, any provider. Static text: keeps the
+ *  injected prefix prompt-cache-stable. Headroom/ponytail/caveman are named as
+ *  habits, so they work even where the matching skill or MCP server is absent. */
+/** True when `cmd` resolves to a file on PATH (also tries .exe/.cmd on Windows). */
+function onPath(cmd: string): boolean {
+  const exts = process.platform === 'win32' ? ['', '.exe', '.cmd', '.bat'] : [''];
+  return (process.env.PATH ?? '').split(delimiter).some((d) => d && exts.some((x) => existsSync(join(d, cmd + x))));
+}
+
+const TOKEN_SAVER_LINE =
+  'TOKEN SAVING (always on): (1) caveman: reply in the fewest words that stay correct, no preamble, no recap, no restating the question. (2) ponytail: write the minimum code that works, reuse what exists, add nothing speculative. (3) headroom: read only the files and lines you need, pipe long command output through tail or grep, and if a headroom_compress tool is available use it on large outputs. Skip a rule only when the human asks for the long form.';
 
 export class HiveManager {
   /**
@@ -834,7 +846,7 @@ export class HiveManager {
           if (desc.kind === 'hooks') {
             if (desc.shim === 'agy') this.installAgyHooks();
             else if (desc.shim === 'codex') {
-              env.CODEX_HOME = this.installCodexHooks(dir, meta.id);
+              env.CODEX_HOME = this.installCodexHooks(dir, meta.id, opts.skillsDir);
               // Codex refuses to run hooks from a config dir without persisted
               // "hook trust" (normally an interactive gate). Our hooks.json is
               // hive-authored inside an isolated CODEX_HOME, so we bypass that gate
@@ -1229,6 +1241,9 @@ export class HiveManager {
       const consented = cfg?.[e.id]?.enabled;
       const enabled = consented ?? e.defaultEnabled;
       if (!enabled) continue;
+      // headroom is a pip tool, not bundled: without it on PATH the server would
+      // just fail at startup in every agent, so leave it out until it is installed.
+      if (e.id === 'headroom' && !onPath(e.spec.command)) continue;
       // Defense-in-depth: a write/secret server requires an EXPLICIT opt-in; it can
       // never ride in on a default (the catalog already ships these OFF, but this
       // guards a hand-edited/partial mcpDefaults map too).
@@ -1518,6 +1533,7 @@ export class HiveManager {
       guardrailsLine,
       memoryLine,
       knowledgeLine,
+      TOKEN_SAVER_LINE,
       godLine,
       spawnQueueLine,
       outsideLine,
@@ -2083,7 +2099,7 @@ export class HiveManager {
    *  ~/.codex/auth.json is linked in and their config.toml is copied + extended
    *  (login + model/provider/trust settings still apply).
    *  Returns the CODEX_HOME path for the caller to put in the worker's env. */
-  private installCodexHooks(dir: string, agentId: string): string {
+  private installCodexHooks(dir: string, agentId: string, skillsDir?: string): string {
     const home = join(dir, '.codex');
     try {
       mkdirSync(home, { recursive: true });
@@ -2153,6 +2169,14 @@ export class HiveManager {
           config += `\n[[hooks.${ev}]]\n[[hooks.${ev}.hooks]]\ntype = "command"\ncommand = ${JSON.stringify(command)}\ntimeout = 30\n`;
         }
       }
+      // Token-saving defaults for Codex too: the headroom MCP server (from the same
+      // catalog Claude agents use; skipped if the user already declares one) and the
+      // bundled skills (ponytail, caveman), which Codex reads from $CODEX_HOME/skills.
+      const hr = MCP_CATALOG.find((e) => e.id === 'headroom');
+      if (hr && onPath(hr.spec.command) && !/\[mcp_servers\.headroom\]/.test(config)) {
+        config += `\n[mcp_servers.headroom]\ncommand = ${JSON.stringify(hr.spec.command)}\nargs = ${JSON.stringify(hr.spec.args)}\n`;
+      }
+      if (skillsDir) this.copyBundledSkills(skillsDir, join(home, 'skills'));
       writeFileSync(join(home, 'config.toml'), config, 'utf8');
 
       // Keep each worker's CODEX_HOME isolated while putting its rollout data

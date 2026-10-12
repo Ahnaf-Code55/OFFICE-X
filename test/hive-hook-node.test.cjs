@@ -183,7 +183,7 @@ test('Codex hook commands survive a hive path containing spaces', { skip: !POSIX
   const agentDir = path.join(harness, 'hive', 'agents', 'a1');
   const codexHome = hive.installCodexHooks(agentDir, 'a1');
   const config = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
-  const commands = [...config.matchAll(/^command\s*=\s*(.+)$/gm)].map((m) => {
+  const commands = [...config.split('[mcp_servers')[0].matchAll(/^command\s*=\s*(.+)$/gm)].map((m) => {
     const literal = m[1].trim();
     return literal.startsWith('"') ? JSON.parse(literal) : literal.slice(1, -1);
   });
