@@ -358,6 +358,10 @@ function onPath(cmd: string): boolean {
   return (process.env.PATH ?? '').split(delimiter).some((d) => d && exts.some((x) => existsSync(join(d, cmd + x))));
 }
 
+/** Tone only: it cannot and does not loosen the model's own safety behaviour. */
+const SAVAGE_LINE =
+  'SAVAGE MODE (tone): be blunt, sarcastic and unfiltered with the human and teammates. No flattery, no corporate politeness, no hedging. Call bad ideas bad and sloppy code sloppy, roast it with wit, then fix it or say how. Swearing in chat is fine. The work itself stays correct, and you still decline anything you would not do otherwise. Drop the act for security warnings and destructive-action confirmations, and when the human says "stop savage".';
+
 const TOKEN_SAVER_LINE =
   'TOKEN SAVING (always on): (1) caveman: reply in the fewest words that stay correct, no preamble, no recap, no restating the question. (2) ponytail: write the minimum code that works, reuse what exists, add nothing speculative. (3) headroom: read only the files and lines you need, pipe long command output through tail or grep, and if a headroom_compress tool is available use it on large outputs. Skip a rule only when the human asks for the long form.';
 
@@ -700,6 +704,8 @@ export class HiveManager {
       /** Consent state for the default-MCP bundle (W3). Threaded from the live
        *  HarnessConfig by the caller; undefined → catalog defaults apply. */
       mcpDefaults?: { [id: string]: { enabled: boolean } };
+      /** Savage-mode tone line (Settings toggle, default on). */
+      savage?: boolean;
       /** App-resources `skills/` source dir (W3). The bundled read-only skills are
        *  copied into the agent's `.claude/skills/` per spawn; undefined or missing
        *  is a no-op (tolerated until Kevin populates the resource dir). */
@@ -822,7 +828,7 @@ export class HiveManager {
     if (!isHiveAwareProvider(meta.provider)) {
       const preset = providerPreset(meta.provider ?? 'claude');
       const flag = preset.initialPromptFlag;
-      const prompt = this.injectedPrompt(meta, dir, root, opts.semanticMemory ?? false, opts.knowledgeGraph ?? false, opts.kgCliPath);
+      const prompt = this.injectedPrompt(meta, dir, root, opts.semanticMemory ?? false, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.savage ?? true);
       // agy, codex, and grok expose a Claude-style lifecycle-hook surface, so each
       // gets the SAME live status + Stop→inbox-drain Claude does — selected by the
       // preset's `hookBridge`. agy needs a translating shim (its hook stdin/stdout
@@ -970,7 +976,7 @@ export class HiveManager {
 
     // Claude in Chrome is off unless asked for; agents (NICO etc.) need it to browse.
     args.push('--chrome');
-    args.push('--append-system-prompt', this.injectedPrompt(meta, dir, root, opts.semanticMemory ?? false, opts.knowledgeGraph ?? false, opts.kgCliPath));
+    args.push('--append-system-prompt', this.injectedPrompt(meta, dir, root, opts.semanticMemory ?? false, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.savage ?? true));
 
     // Phase 1 — autonomy: attach lifecycle hooks via --settings (no edits to the
     // user's repo) so the agent reports activity and drains its inbox on Stop.
@@ -1454,7 +1460,8 @@ export class HiveManager {
     root: string,
     semanticMemory: boolean,
     knowledgeGraph: boolean,
-    kgCliPath?: string
+    kgCliPath?: string,
+    savage = true
   ): string {
     // Native-separator path helpers — see the 🪟 note above.
     const inDir = (...parts: string[]): string => join(dir, ...parts);
@@ -1535,6 +1542,7 @@ export class HiveManager {
       memoryLine,
       knowledgeLine,
       TOKEN_SAVER_LINE,
+      savage ? SAVAGE_LINE : '',
       godLine,
       spawnQueueLine,
       outsideLine,
