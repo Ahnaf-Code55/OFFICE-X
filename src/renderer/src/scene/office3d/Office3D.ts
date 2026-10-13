@@ -119,6 +119,9 @@ export class Office3D {
   private ro: ResizeObserver;
   private down = { x: 0, y: 0 };
   private sun!: THREE.DirectionalLight;
+  private fill!: THREE.HemisphereLight;
+  private lastSky = -1;
+  private winMat: THREE.MeshBasicMaterial | null = null;
   private furniture: THREE.Group[] = [];
   private userMoved = false;
   private mapW = 0;
@@ -149,13 +152,14 @@ export class Office3D {
     this.scene.background = new THREE.Color(0x14110e);
 
     // lights: soft sky/ground fill + one sun with shadows over the whole floor plan
-    this.scene.add(new THREE.HemisphereLight(0xfff3e2, 0xa89a88, 1.25));
+    this.fill = new THREE.HemisphereLight(0xfff3e2, 0xa89a88, 1.25);
+    this.scene.add(this.fill);
     const sun = new THREE.DirectionalLight(0xffe8c8, 1.7);
     sun.position.set(W / 2 - 14, 34, H / 2 + 20);
     sun.target.position.set(W / 2, 0, H / 2);
     sun.castShadow = true;
     this.sun = sun;
-    sun.shadow.mapSize.set(1536, 1536);
+    sun.shadow.mapSize.set(1024, 1024); // 4 MB depth map instead of 9 MB; plenty for soft office shadows
     const sc = sun.shadow.camera;
     sc.left = -38; sc.right = 38; sc.top = 30; sc.bottom = -30; sc.near = 1; sc.far = 120;
     sun.shadow.bias = -0.0004;
@@ -200,7 +204,7 @@ export class Office3D {
     this.controls = new OrbitControls(this.camera, el);
     this.controls.target.set(W / 2, 0, H / 2);
     this.controls.enableDamping = true;
-    this.controls.minDistance = 10; this.controls.maxDistance = 85;
+    this.controls.minDistance = 10; this.controls.maxDistance = 160;
     this.controls.minPolarAngle = 0.15; this.controls.maxPolarAngle = 1.3;
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
 
@@ -260,6 +264,21 @@ export class Office3D {
     const sides = new THREE.Mesh(sideGeo, sideMat);
     for (const m of [top, sides]) { m.castShadow = true; m.receiveShadow = true; this.scene.add(m); }
     this.disposables.push(topTex, topGeo, sideGeo, topMat, sideMat);
+
+    // Window panes on the north wall's room-facing side: one merged mesh, unlit, tinted by the time of day.
+    const pane: number[] = [];
+    for (let y = 0; y < 4; y++) for (let x = 0; x < W; x++) {
+      if (!has(x, y) || has(x, y + 1) || x % 6 > 1) continue;
+      const z = y + 1.012;
+      quad(pane, [[x, 0.55, z], [x + 1, 0.55, z], [x + 1, 1.2, z], [x, 1.2, z]]);
+    }
+    if (pane.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pane, 3));
+      this.winMat = new THREE.MeshBasicMaterial({ color: 0xfff1d0 });
+      this.scene.add(new THREE.Mesh(g, this.winMat));
+      this.disposables.push(g, this.winMat);
+    }
   }
 
   /** Blocking furniture tiles become low blocks: art on top, the art's average colour on the sides. */
@@ -324,7 +343,7 @@ export class Office3D {
   private fitCamera(W: number, H: number): void {
     const vf = THREE.MathUtils.degToRad(this.camera.fov);
     const hf = 2 * Math.atan(Math.tan(vf / 2) * this.camera.aspect);
-    const d = THREE.MathUtils.clamp(Math.max((W * 0.56) / Math.tan(hf / 2), (H * 0.66) / Math.tan(vf / 2)), 20, 85);
+    const d = THREE.MathUtils.clamp(Math.max((W * 0.56) / Math.tan(hf / 2), (H * 0.66) / Math.tan(vf / 2)), 20, 160);
     const polar = 0.88;
     this.camera.position.set(W / 2, d * Math.cos(polar), H / 2 + d * Math.sin(polar));
     this.controls.update();
@@ -332,9 +351,26 @@ export class Office3D {
     this.home.target.copy(this.controls.target);
   }
 
+  /** Warm daylight that follows the clock: low amber sun at dawn/dusk, bright at noon, dim but readable at night.
+   *  Runs at most once a minute and only mutates existing lights, so it costs nothing per frame. */
+  private applyTimeOfDay(): void {
+    const now = new Date(), minute = now.getHours() * 60 + now.getMinutes();
+    if (minute === this.lastSky) return;
+    this.lastSky = minute;
+    const day = Math.max(0, Math.sin(((minute / 60 - 6) / 12) * Math.PI)); // 0 at 06:00 and 18:00, 1 at noon
+    const warm = 1 - Math.min(1, day * 2.2); // 1 near the horizon, 0 once the sun is high
+    this.sun.intensity = 0.6 + 1.2 * day;
+    this.sun.color.setRGB(1, 0.93 - 0.28 * warm, 0.8 - 0.4 * warm);
+    this.sun.position.y = 12 + 22 * day;
+    this.fill.intensity = 1.0 + 0.45 * day;
+    this.winMat?.color.setRGB(0.42 + 0.58 * day, 0.37 + 0.6 * day, 0.27 + 0.58 * day); // lamp-lit at night, bright sky by day
+    (this.scene.background as THREE.Color).setRGB(0.08 + 0.04 * day, 0.065 + 0.03 * day, 0.055 + 0.025 * day);
+  }
+
   /** Low = cheaper machines: no shadows, 1x pixels, ~20fps. */
   setQuality(q: 'high' | 'low'): void {
     this.sun.castShadow = q === 'high';
+    if (q === 'low') { this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; } // free the shadow map's GPU memory
     this.renderer.setPixelRatio(q === 'high' ? Math.min(window.devicePixelRatio || 1, 1.5) : 1);
     this.frameGap = q === 'high' ? 1 / 32 : 1 / 21;
     this.resize();
@@ -411,6 +447,7 @@ export class Office3D {
       if (this.camera.position.distanceTo(this.fly.pos) < 0.05) this.fly = null;
     }
     this.sinceRender = 0;
+    this.applyTimeOfDay();
     this.renderer.shadowMap.needsUpdate = this.renders++ % 2 === 0;
     this.controls.update();
     this.renderer.render(this.scene, this.camera);

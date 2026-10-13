@@ -4,7 +4,7 @@ import type { PersonLook } from '../office/portraitArt';
 type RGB = [number, number, number];
 
 interface RigPose {
-  hipY: number; bodyY: number; bodyScaleY: number; headX: number;
+  hipY: number; bodyY: number; bodyScaleY: number; bodyScaleXZ: number; headX: number; headYaw: number;
   armLX: number; armRX: number; elbowLX: number; elbowRX: number;
   legLX: number; legRX: number; kneeLX: number; kneeRX: number;
 }
@@ -14,7 +14,7 @@ const DIRECTIONS: Record<'down' | 'up' | 'left' | 'right', number> = {
 };
 
 const BASE: RigPose = {
-  hipY: 0.76, bodyY: 0, bodyScaleY: 1, headX: 0,
+  hipY: 0.76, bodyY: 0, bodyScaleY: 1, bodyScaleXZ: 1, headX: 0, headYaw: 0,
   armLX: 0, armRX: 0, elbowLX: 0, elbowRX: 0,
   legLX: 0, legRX: 0, kneeLX: 0, kneeRX: 0,
 };
@@ -39,12 +39,16 @@ export class Person3D {
   private readonly kneeR = new THREE.Group();
   private pose: 'idle' | 'walk' | 'type' | 'read' | 'sit' = 'idle';
   private elapsed = 0;
+  /** Reused every frame as the rig target so update() never allocates. */
+  private readonly rigTarget: RigPose = { ...BASE };
+  /** Per-person phase offset so a room of people does not breathe in sync. */
+  private readonly breathOffset = Math.random() * Math.PI * 2;
 
   constructor(look: PersonLook) {
     this.group.name = 'Person3D';
     this.group.add(this.body);
     this.buildBody(look);
-    this.applyRig(BASE, 1);
+    this.applyRig(BASE, 0, true);
   }
 
   setPose(pose: 'idle' | 'walk' | 'type' | 'read' | 'sit', dir: 'down' | 'up' | 'left' | 'right'): void {
@@ -55,13 +59,18 @@ export class Person3D {
   update(dtSeconds: number): void {
     const dt = Math.min(Math.max(dtSeconds, 0), 0.1);
     this.elapsed += dt;
-    const blend = 1 - Math.exp(-10 * dt);
+    const turnBlend = 1 - Math.exp(-10 * dt);
     const targetRotation = (this.group.userData.targetRotationY as number | undefined) ?? 0;
     let turn = targetRotation - this.group.rotation.y;
     turn = Math.atan2(Math.sin(turn), Math.cos(turn));
-    this.group.rotation.y += turn * blend;
+    this.group.rotation.y += turn * turnBlend;
 
-    const p = { ...BASE };
+    // Reuse the rig target object; Object.assign copies without allocating.
+    const p = Object.assign(this.rigTarget, BASE);
+    const t = this.elapsed + this.breathOffset;
+    const breath = Math.sin(t * 2.1);
+    // Slow, smooth head wander from two incommensurate sines (no RNG state, no allocation).
+    const wander = Math.sin(t * 0.37) * 0.22 + Math.sin(t * 0.83 + 1.7) * 0.14;
     const phase = this.elapsed * 8;
     if (this.pose === 'walk') {
       const swing = Math.sin(phase) * 0.62;
@@ -72,21 +81,32 @@ export class Person3D {
       p.bodyY = Math.abs(Math.sin(phase)) * 0.035;
       p.headX = Math.sin(phase) * 0.025;
     } else if (this.pose === 'idle') {
-      p.bodyScaleY = 1 + Math.sin(this.elapsed * 2.1) * 0.012;
-      p.bodyY = Math.sin(this.elapsed * 2.1) * 0.008;
+      p.bodyScaleY = 1 + breath * 0.014;
+      p.bodyScaleXZ = 1 + breath * 0.008;
+      p.bodyY = breath * 0.008;
+      p.headYaw = wander;
+      p.headX = Math.sin(t * 0.5 + 1.0) * 0.045;
     } else if (this.pose === 'type') {
       p.armLX = p.armRX = -0.78;
       p.elbowLX = -1.15 + Math.sin(phase * 1.3) * 0.08;
       p.elbowRX = -1.15 + Math.sin(phase * 1.3 + 1.7) * 0.08;
       p.headX = 0.1;
+      p.headYaw = wander * 0.3;
+      p.bodyScaleY = 1 + breath * 0.006;
     } else if (this.pose === 'read') {
-      p.headX = 0.25; p.armLX = -0.55; p.elbowLX = -1.35;
-      p.armRX = 0.08; p.elbowRX = -0.35;
+      // Thinking pose: right hand raised to the chin, head tipped down onto it.
+      p.headX = 0.22 + Math.sin(t * 0.9) * 0.03;
+      p.headYaw = wander * 0.5;
+      p.armRX = -0.9; p.elbowRX = -2.3;
+      p.armLX = -0.25; p.elbowLX = -0.5;
+      p.bodyScaleY = 1 + breath * 0.006;
     } else {
       p.hipY = 0.88; p.legLX = p.legRX = -1.18;
       p.kneeLX = p.kneeRX = 1.18; p.armLX = p.armRX = -0.18;
+      p.headYaw = wander * 0.4;
+      p.bodyScaleY = 1 + breath * 0.006;
     }
-    this.applyRig(p, blend);
+    this.applyRig(p, dt);
   }
 
   dispose(): void {
@@ -126,12 +146,8 @@ export class Person3D {
     return this.geometry(key, () => new THREE.SphereGeometry(radius, segments, Math.max(6, segments - 2)));
   }
 
-  private capsule(key: string, radius: number, length: number): THREE.BufferGeometry {
-    return this.geometry(key, () => new THREE.CapsuleGeometry(radius, length, 4, 8));
-  }
-
-  private tapered(key: string, top: number, bottom: number, length: number): THREE.BufferGeometry {
-    return this.geometry(key, () => new THREE.CylinderGeometry(top, bottom, length, 8, 1));
+  private capsule(key: string, radius: number, length: number, radialSegments = 8): THREE.BufferGeometry {
+    return this.geometry(key, () => new THREE.CapsuleGeometry(radius, length, 4, radialSegments));
   }
 
   private buildBody(look: PersonLook): void {
@@ -151,7 +167,7 @@ export class Person3D {
     this.torso.position.y = 0.30;
     this.body.add(this.torso);
 
-    const torsoShape = this.tapered('torso', 0.25, 0.205, 0.54);
+    const torsoShape = this.capsule('torso', 0.23, 0.08, 12);
     this.mesh(torsoShape, shirt, this.torso, [0, 0.08, 0], [width, 1, look.heavy ? 1.14 : 0.88]);
     const shoulders = this.mesh(this.capsule('shoulders', 0.105, 0.42), shirt, this.torso, [0, 0.28, 0], [width, 1, 0.9]);
     shoulders.rotation.z = Math.PI / 2;
@@ -159,7 +175,7 @@ export class Person3D {
 
     this.head.position.set(0, 0.68, 0);
     this.torso.add(this.head);
-    this.mesh(this.tapered('neck', 0.085, 0.095, 0.15), skin, this.torso, [0, 0.46, 0]);
+    this.mesh(this.capsule('neck', 0.088, 0.02, 10), skin, this.torso, [0, 0.46, 0]);
     this.mesh(this.sphere('head', 0.27, 14), skin, this.head, [0, 0, 0],
       [look.heavy ? 1.04 : 0.94, look.heavy ? 0.97 : 1.04, 0.91]);
     this.mesh(this.sphere('ear', 0.052, 8), skin, this.head, [-0.245, 0, 0]);
@@ -181,10 +197,10 @@ export class Person3D {
 
   private buildArm(upper: THREE.Group, elbow: THREE.Group, side: -1 | 1,
     cloth: THREE.Material, skin: THREE.Material): void {
-    this.mesh(this.tapered('upperArm', 0.09, 0.075, 0.34), cloth, upper, [0, -0.18, 0]);
+    this.mesh(this.capsule('upperArm', 0.082, 0.176), cloth, upper, [0, -0.18, 0]);
     elbow.position.y = -0.35; upper.add(elbow);
     this.mesh(this.sphere('jointSmall', 0.078, 8), skin, elbow, [0, 0, 0], [1, 0.9, 1]);
-    this.mesh(this.tapered('forearm', 0.073, 0.062, 0.27), skin, elbow, [0, -0.15, 0]);
+    this.mesh(this.capsule('forearm', 0.067, 0.136), skin, elbow, [0, -0.15, 0]);
     const palm = this.mesh(this.sphere('palm', 0.082, 9), skin, elbow, [0, -0.32, 0.015], [0.9, 1.12, 0.72]);
     palm.rotation.x = -0.08;
     const thumb = this.mesh(this.capsule('thumb', 0.025, 0.065), skin, elbow, [side * 0.065, -0.30, 0.035], [1, 1, 0.8]);
@@ -192,10 +208,10 @@ export class Person3D {
   }
 
   private buildLeg(upper: THREE.Group, knee: THREE.Group, pants: THREE.Material, shoe: THREE.Material): void {
-    this.mesh(this.tapered('thigh', 0.12, 0.10, 0.36), pants, upper, [0, -0.18, 0]);
+    this.mesh(this.capsule('thigh', 0.11, 0.14), pants, upper, [0, -0.18, 0]);
     knee.position.y = -0.36; upper.add(knee);
     this.mesh(this.sphere('knee', 0.102, 8), pants, knee, [0, 0, 0], [1, 0.82, 1]);
-    this.mesh(this.tapered('shin', 0.095, 0.075, 0.30), pants, knee, [0, -0.17, 0]);
+    this.mesh(this.capsule('shin', 0.085, 0.13), pants, knee, [0, -0.17, 0]);
     const foot = this.mesh(this.geometry('shoe', () => new THREE.CapsuleGeometry(0.085, 0.18, 3, 8)),
       shoe, knee, [0, -0.34, 0.075], [1.1, 0.72, 1.3]);
     foot.rotation.x = Math.PI / 2;
@@ -333,18 +349,24 @@ export class Person3D {
     }
   }
 
-  private applyRig(p: RigPose, alpha: number): void {
-    const lerp = (from: number, to: number) => THREE.MathUtils.lerp(from, to, alpha);
-    this.body.position.y = lerp(this.body.position.y, p.hipY + p.bodyY);
-    this.torso.scale.y = lerp(this.torso.scale.y, p.bodyScaleY);
-    this.head.rotation.x = lerp(this.head.rotation.x, p.headX);
-    this.armL.rotation.x = lerp(this.armL.rotation.x, p.armLX);
-    this.armR.rotation.x = lerp(this.armR.rotation.x, p.armRX);
-    this.elbowL.rotation.x = lerp(this.elbowL.rotation.x, p.elbowLX);
-    this.elbowR.rotation.x = lerp(this.elbowR.rotation.x, p.elbowRX);
-    this.legL.rotation.x = lerp(this.legL.rotation.x, p.legLX);
-    this.legR.rotation.x = lerp(this.legR.rotation.x, p.legRX);
-    this.kneeL.rotation.x = lerp(this.kneeL.rotation.x, p.kneeLX);
-    this.kneeR.rotation.x = lerp(this.kneeR.rotation.x, p.kneeRX);
+  private applyRig(p: RigPose, dt: number, snap = false): void {
+    // Damped interpolation (exponential) so pose changes glide instead of snapping;
+    // the head eases slower than the body for a natural settle.
+    const aBody = snap ? 1 : 1 - Math.exp(-8 * dt);
+    const aHead = snap ? 1 : 1 - Math.exp(-4 * dt);
+    this.body.position.y = THREE.MathUtils.lerp(this.body.position.y, p.hipY + p.bodyY, aBody);
+    this.torso.scale.y = THREE.MathUtils.lerp(this.torso.scale.y, p.bodyScaleY, aBody);
+    this.torso.scale.x = THREE.MathUtils.lerp(this.torso.scale.x, p.bodyScaleXZ, aBody);
+    this.torso.scale.z = THREE.MathUtils.lerp(this.torso.scale.z, p.bodyScaleXZ, aBody);
+    this.head.rotation.x = THREE.MathUtils.lerp(this.head.rotation.x, p.headX, aHead);
+    this.head.rotation.y = THREE.MathUtils.lerp(this.head.rotation.y, p.headYaw, aHead);
+    this.armL.rotation.x = THREE.MathUtils.lerp(this.armL.rotation.x, p.armLX, aBody);
+    this.armR.rotation.x = THREE.MathUtils.lerp(this.armR.rotation.x, p.armRX, aBody);
+    this.elbowL.rotation.x = THREE.MathUtils.lerp(this.elbowL.rotation.x, p.elbowLX, aBody);
+    this.elbowR.rotation.x = THREE.MathUtils.lerp(this.elbowR.rotation.x, p.elbowRX, aBody);
+    this.legL.rotation.x = THREE.MathUtils.lerp(this.legL.rotation.x, p.legLX, aBody);
+    this.legR.rotation.x = THREE.MathUtils.lerp(this.legR.rotation.x, p.legRX, aBody);
+    this.kneeL.rotation.x = THREE.MathUtils.lerp(this.kneeL.rotation.x, p.kneeLX, aBody);
+    this.kneeR.rotation.x = THREE.MathUtils.lerp(this.kneeR.rotation.x, p.kneeRX, aBody);
   }
 }

@@ -55,3 +55,19 @@ test('the main office contains desks and walkable chairs', () => {
   assert.ok(items.some((item) => item.kind === 'desk'), 'at least one desk is classified');
   assert.ok(items.some((item) => item.kind === 'chair'), 'at least one chair is classified');
 });
+
+test('a large wide boardroom block is a table, not a sofa', () => {
+  const width = 12, height = 10;
+  const below = new Array(width * height).fill(0);
+  // Solid 6x4 block: boardroom-table-sized.
+  for (let y = 2; y < 6; y++) for (let x = 2; x < 8; x++) below[y * width + x] = 5;
+  // Long narrow 4x1 run in the same purple colour: a sofa.
+  for (let x = 2; x < 6; x++) below[8 * width + x] = 7;
+  const map = { width, height, layers: [{ name: 'furniture-below', type: 'tilelayer', data: below }] };
+  const purple = [0.52, 0.3, 0.62];
+  const items = planFurniture(map, () => false, () => purple);
+  const block = items.find((item) => item.w === 6 && item.d === 4);
+  assert.equal(block?.kind, 'table', 'large wide block classifies as table');
+  const run = items.find((item) => item.w === 4 && item.d === 1);
+  assert.equal(run?.kind, 'sofa', 'long narrow purple run still classifies as sofa');
+});
