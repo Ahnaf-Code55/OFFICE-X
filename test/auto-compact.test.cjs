@@ -1,6 +1,6 @@
 'use strict';
 
-// Platform default: agents compact at ~150k tokens. Claude Code gets a percent
+// Platform default: agents compact at ~100k tokens. Claude Code gets a percent
 // override sized to its window, Codex a `-c` config override; both must leave
 // an operator's own choice alone. Plus: the bundled Caveman skill ships with
 // valid frontmatter (it is copied into every agent's .claude/skills).
@@ -30,8 +30,8 @@ function claudeThreshold(window, pct) {
   return Math.min(Math.floor(effective * (parseFloat(pct) / 100)), effective - 13_000);
 }
 
-test('the shared compaction point is 150k tokens', () => {
-  assert.equal(AUTO_COMPACT_TOKENS, 150_000);
+test('the shared compaction point is 100k tokens', () => {
+  assert.equal(AUTO_COMPACT_TOKENS, 100_000);
 });
 
 test('only the [1m] suffix selects the 1M window', () => {
@@ -41,18 +41,18 @@ test('only the [1m] suffix selects the 1M window', () => {
   assert.equal(claudeContextWindow(undefined), 200_000);
 });
 
-test('plain model: percent lands Claude Code at ~150k, not 135k', () => {
+test('plain model: percent lands Claude Code at ~100k, not 90k', () => {
   const pct = claudeAutoCompactPct('claude-opus-4-8');
-  assert.equal(pct, '83.34');
+  assert.equal(pct, '55.56');
   const t = claudeThreshold(200_000, pct);
-  assert.ok(t >= 150_000 && t < 150_100, `threshold ${t}`);
+  assert.ok(t >= 100_000 && t < 100_100, `threshold ${t}`);
 });
 
-test('[1m] model: percent lands Claude Code at ~150k, not 147k', () => {
+test('[1m] model: percent lands Claude Code at ~100k, not 97k', () => {
   const pct = claudeAutoCompactPct('claude-sonnet-4-6[1m]');
-  assert.equal(pct, '15.31');
+  assert.equal(pct, '10.21');
   const t = claudeThreshold(1_000_000, pct);
-  assert.ok(t >= 150_000 && t < 150_100, `threshold ${t}`);
+  assert.ok(t >= 100_000 && t < 100_100, `threshold ${t}`);
 });
 
 test('model is read from either --model form', () => {
@@ -62,8 +62,8 @@ test('model is read from either --model form', () => {
 });
 
 test('claude env: set from the resolved model, but a per-agent value wins', () => {
-  assert.deepEqual(claudeAutoCompactEnv(['--model', 'opus[1m]']), { [CLAUDE_AUTOCOMPACT_ENV]: '15.31' });
-  assert.deepEqual(claudeAutoCompactEnv([]), { [CLAUDE_AUTOCOMPACT_ENV]: '83.34' });
+  assert.deepEqual(claudeAutoCompactEnv(['--model', 'opus[1m]']), { [CLAUDE_AUTOCOMPACT_ENV]: '10.21' });
+  assert.deepEqual(claudeAutoCompactEnv([]), { [CLAUDE_AUTOCOMPACT_ENV]: '55.56' });
   assert.deepEqual(claudeAutoCompactEnv(['--model', 'opus'], { [CLAUDE_AUTOCOMPACT_ENV]: '50' }), {});
   // A user-chosen compact window changes what the percent means — hands off.
   assert.deepEqual(claudeAutoCompactEnv(['--model', 'opus'], { CLAUDE_CODE_AUTO_COMPACT_WINDOW: '400k' }), {});
@@ -72,12 +72,12 @@ test('claude env: set from the resolved model, but a per-agent value wins', () =
 test('the per-agent env survives the pty CLAUDE_* strip', () => {
   const { buildPtyEnv } = loadTs('src/main/ptyEnv.ts');
   const env = buildPtyEnv({ [CLAUDE_AUTOCOMPACT_ENV]: '99' }, '/bin', claudeAutoCompactEnv([]), 'linux');
-  assert.equal(env[CLAUDE_AUTOCOMPACT_ENV], '83.34');
+  assert.equal(env[CLAUDE_AUTOCOMPACT_ENV], '55.56');
 });
 
 test('codex: the -c override is added once, ahead of the positional prompt', () => {
   const args = withCodexAutoCompactArgs(['-a', 'never', '--dangerously-bypass-hook-trust', 'You are "Dev2"']);
-  assert.deepEqual(args.slice(0, 2), ['-c', 'model_auto_compact_token_limit=150000']);
+  assert.deepEqual(args.slice(0, 2), ['-c', 'model_auto_compact_token_limit=100000']);
   assert.equal(args[args.length - 1], 'You are "Dev2"');
   // Idempotent: a respawn through the same path never doubles it.
   assert.deepEqual(withCodexAutoCompactArgs(args), args);
@@ -96,7 +96,7 @@ test('codex: a user override in any config form is respected', () => {
 
 test('codex: a leading resume subcommand stays argv[0]', () => {
   const args = withCodexAutoCompactArgs(['resume', 'sid-1', 'prompt']);
-  assert.deepEqual(args, ['resume', '-c', 'model_auto_compact_token_limit=150000', 'sid-1', 'prompt']);
+  assert.deepEqual(args, ['resume', '-c', 'model_auto_compact_token_limit=100000', 'sid-1', 'prompt']);
 });
 
 test('caveman skill ships with valid frontmatter and is hire-allowlisted', () => {

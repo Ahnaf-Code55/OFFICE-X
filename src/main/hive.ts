@@ -358,6 +358,11 @@ function onPath(cmd: string): boolean {
   return (process.env.PATH ?? '').split(delimiter).some((d) => d && exts.some((x) => existsSync(join(d, cmd + x))));
 }
 
+/** Only injected when the `rtk` binary is installed, so the advice is never wrong. No hook is
+ *  written: `rtk init -g` edits the user's global agent config, which OFFICE-X must not touch. */
+const RTK_LINE =
+  'RTK is installed: put `rtk` in front of noisy shell commands (rtk git status, rtk git diff, rtk git log, rtk ls, rtk tree, rtk npm test, rtk cargo build) so their output is compressed before it reaches you. If rtk fails or hides what you need, rerun the plain command.';
+
 /** Tone only: it cannot and does not loosen the model's own safety behaviour. */
 const SAVAGE_LINE =
   'SAVAGE MODE (tone): be blunt, sarcastic and unfiltered with the human and teammates. No flattery, no corporate politeness, no hedging. Call bad ideas bad and sloppy code sloppy, roast it with wit, then fix it or say how. Swearing in chat is fine. The work itself stays correct, and you still decline anything you would not do otherwise. Drop the act for security warnings and destructive-action confirmations, and when the human says "stop savage".';
@@ -1543,6 +1548,7 @@ export class HiveManager {
       knowledgeLine,
       TOKEN_SAVER_LINE,
       savage ? SAVAGE_LINE : '',
+      onPath('rtk') ? RTK_LINE : '',
       godLine,
       spawnQueueLine,
       outsideLine,

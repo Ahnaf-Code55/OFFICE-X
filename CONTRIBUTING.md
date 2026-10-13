@@ -61,6 +61,8 @@ npm run dev        # live-reloading Electron build
 Optional, but recommended: every new agent gets the ponytail and caveman skills
 automatically (they ship with the app). The headroom token saver needs a one-time
 `pipx install "headroom-ai[mcp]"`; once `headroom` is on your PATH, agents pick it up.
+Also optional: [rtk](https://github.com/rtk-ai/rtk) (`brew install rtk` or its install script) compresses shell output;
+when `rtk` is on your PATH, new agents are told to use it. OFFICE-X never edits your global agent config for it.
 
 > [!IMPORTANT]
 > **The most common setup failure is the native `node-pty` rebuild.** The

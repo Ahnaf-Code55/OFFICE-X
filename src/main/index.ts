@@ -3002,7 +3002,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     }
     opts.args = args;
   }
-  // Platform default: compact at ~150k tokens (shared/autoCompact). After the
+  // Platform default: compact at ~100k tokens (shared/autoCompact). After the
   // model is resolved above (Claude's percent depends on its window) and BEFORE
   // the codex resume reorder below, which keeps the pair ahead of the prompt.
   // A per-agent env value / an explicit codex override always wins.
