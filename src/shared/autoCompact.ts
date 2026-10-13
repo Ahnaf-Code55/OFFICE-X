@@ -5,7 +5,7 @@
  * and the app-driven compact trigger uses the same number as an absolute floor
  * for the CLIs that have no such knob.
  */
-export const AUTO_COMPACT_TOKENS = 150_000;
+export const AUTO_COMPACT_TOKENS = 100_000;
 
 /** Claude Code's auto-compact percent override, read as a percent of the
  *  EFFECTIVE window (see claudeAutoCompactPct). */

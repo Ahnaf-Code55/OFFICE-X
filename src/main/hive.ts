@@ -358,6 +358,11 @@ function onPath(cmd: string): boolean {
   return (process.env.PATH ?? '').split(delimiter).some((d) => d && exts.some((x) => existsSync(join(d, cmd + x))));
 }
 
+/** Only injected when the `rtk` binary is installed, so the advice is never wrong. No hook is
+ *  written: `rtk init -g` edits the user's global agent config, which OFFICE-X must not touch. */
+const RTK_LINE =
+  'RTK is installed: put `rtk` in front of noisy shell commands (rtk git status, rtk git diff, rtk git log, rtk ls, rtk tree, rtk npm test, rtk cargo build) so their output is compressed before it reaches you. If rtk fails or hides what you need, rerun the plain command.';
+
 const TOKEN_SAVER_LINE =
   'TOKEN SAVING (always on): (1) caveman: reply in the fewest words that stay correct, no preamble, no recap, no restating the question. (2) ponytail: write the minimum code that works, reuse what exists, add nothing speculative. (3) headroom: read only the files and lines you need, pipe long command output through tail or grep, and if a headroom_compress tool is available use it on large outputs. Skip a rule only when the human asks for the long form.';
 
