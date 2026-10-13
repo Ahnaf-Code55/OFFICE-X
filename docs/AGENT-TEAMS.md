@@ -1,6 +1,6 @@
 # Agent Teams handoff
 
-Updated: 2026-10-13. Local feature branch: `trahman/agent-team-dock`.
+Updated: 2026-10-13. Publish branch: `trahman/office-teams-block-graph`.
 
 The flat buttons in the right agent workspace are replaced by a Teams drawer and a deduplicated All agents view. Side filters cover Turjo, Ahnaf and other employees. Search preserves reporting paths; manager chevrons reveal workers. Each local row shows its role, work area, model and current status. Selecting it opens the existing workspace.
 
@@ -15,7 +15,7 @@ Ahnaf's connected agents use the existing bounded shared-presence projection. Re
 - `standingGoal.ts`, `useHive.ts`: OpenCode's lifecycle-only plugin does not inject goals; queued deliveries now carry the current saved goal.
 - `rosterWriter.ts`, `store.ts`: a superseded development store cannot flush an older snapshot over newly hired workers. Hot disposal flushes the current writer and removes its unload listener.
 - Focused regression coverage in `agent-teams`, `standing-goal` and `roster-writer` tests.
-- No office-floor or scene files changed. Personal hire manifests, goals, profile and screenshots remain outside the shared repository.
+- No office-floor or scene files changed. Personal hire manifests, goals and profile remain outside the shared repository. Review screenshots contain only the relevant UI.
 
 ## Validation
 
@@ -23,4 +23,4 @@ Typecheck and production build passed. Focused suite: 990 tests, 988 passed, 2 e
 
 ## Next step
 
-Review the local UI before publishing this branch. Real Ahnaf-device presence and two-computer acceptance still need a connected Shared Office; fixture checks do not prove that connection. Keep Ahnaf's floor/scene changes separate. The earlier local Codex folder-trust fix is also present on this branch as its own commit.
+The owner approved publishing the Teams and Graph UI for review. Real Ahnaf-device presence and two-computer acceptance still need a connected Shared Office; fixture checks do not prove that connection. Keep Ahnaf's floor/scene changes separate. The earlier Codex folder-trust fix is published in a separate PR.

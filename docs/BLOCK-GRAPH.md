@@ -1,6 +1,6 @@
 # Block Graph handoff
 
-Updated: 2026-10-13. Local branch: `trahman/block-communication-graph`, based on the pending Teams implementation.
+Updated: 2026-10-13. Publish branch: `trahman/office-teams-block-graph`, including the Teams implementation.
 
 Graph now uses the approved top-down blocks: separate blue Ahnaf and green Turjo sections, orchestrators above six manager columns, and worker lists beneath each manager. Shared specialists reuse the same employee key and appear under each assigned manager. Current saved job labels, models, goals and permissions are preserved.
 
@@ -23,4 +23,4 @@ Typecheck, production build and focused tests passed. Desktop acceptance passed 
 
 ## Next step
 
-Review the local Graph tab and the dark/light screenshots. Use All recorded to inspect the existing communication history when the current 15-minute window is quiet. Real cross-device Ahnaf communication is not supplied by presence and was not verified. Publish only after the owner's next instruction; include the pending Teams dependency and keep Ahnaf's floor changes separate.
+Review the local Graph tab and the dark/light screenshots. Use All recorded to inspect the existing communication history when the current 15-minute window is quiet. Real cross-device Ahnaf communication is not supplied by presence and was not verified. The owner approved publishing Teams and Graph together for review. Keep Ahnaf's floor changes separate.
