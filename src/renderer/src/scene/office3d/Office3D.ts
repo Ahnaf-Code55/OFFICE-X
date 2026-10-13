@@ -121,6 +121,7 @@ export class Office3D {
   private sun!: THREE.DirectionalLight;
   private fill!: THREE.HemisphereLight;
   private lastSky = -1;
+  private winMat: THREE.MeshBasicMaterial | null = null;
   private furniture: THREE.Group[] = [];
   private userMoved = false;
   private mapW = 0;
@@ -203,7 +204,7 @@ export class Office3D {
     this.controls = new OrbitControls(this.camera, el);
     this.controls.target.set(W / 2, 0, H / 2);
     this.controls.enableDamping = true;
-    this.controls.minDistance = 10; this.controls.maxDistance = 85;
+    this.controls.minDistance = 10; this.controls.maxDistance = 160;
     this.controls.minPolarAngle = 0.15; this.controls.maxPolarAngle = 1.3;
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
 
@@ -263,6 +264,21 @@ export class Office3D {
     const sides = new THREE.Mesh(sideGeo, sideMat);
     for (const m of [top, sides]) { m.castShadow = true; m.receiveShadow = true; this.scene.add(m); }
     this.disposables.push(topTex, topGeo, sideGeo, topMat, sideMat);
+
+    // Window panes on the north wall's room-facing side: one merged mesh, unlit, tinted by the time of day.
+    const pane: number[] = [];
+    for (let y = 0; y < 4; y++) for (let x = 0; x < W; x++) {
+      if (!has(x, y) || has(x, y + 1) || x % 6 > 1) continue;
+      const z = y + 1.012;
+      quad(pane, [[x, 0.55, z], [x + 1, 0.55, z], [x + 1, 1.2, z], [x, 1.2, z]]);
+    }
+    if (pane.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pane, 3));
+      this.winMat = new THREE.MeshBasicMaterial({ color: 0xfff1d0 });
+      this.scene.add(new THREE.Mesh(g, this.winMat));
+      this.disposables.push(g, this.winMat);
+    }
   }
 
   /** Blocking furniture tiles become low blocks: art on top, the art's average colour on the sides. */
@@ -327,7 +343,7 @@ export class Office3D {
   private fitCamera(W: number, H: number): void {
     const vf = THREE.MathUtils.degToRad(this.camera.fov);
     const hf = 2 * Math.atan(Math.tan(vf / 2) * this.camera.aspect);
-    const d = THREE.MathUtils.clamp(Math.max((W * 0.56) / Math.tan(hf / 2), (H * 0.66) / Math.tan(vf / 2)), 20, 85);
+    const d = THREE.MathUtils.clamp(Math.max((W * 0.56) / Math.tan(hf / 2), (H * 0.66) / Math.tan(vf / 2)), 20, 160);
     const polar = 0.88;
     this.camera.position.set(W / 2, d * Math.cos(polar), H / 2 + d * Math.sin(polar));
     this.controls.update();
@@ -347,6 +363,7 @@ export class Office3D {
     this.sun.color.setRGB(1, 0.93 - 0.28 * warm, 0.8 - 0.4 * warm);
     this.sun.position.y = 12 + 22 * day;
     this.fill.intensity = 1.0 + 0.45 * day;
+    this.winMat?.color.setRGB(0.42 + 0.58 * day, 0.37 + 0.6 * day, 0.27 + 0.58 * day); // lamp-lit at night, bright sky by day
     (this.scene.background as THREE.Color).setRGB(0.08 + 0.04 * day, 0.065 + 0.03 * day, 0.055 + 0.025 * day);
   }
 

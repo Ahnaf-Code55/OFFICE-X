@@ -2194,15 +2194,17 @@ export function OfficeFloor() {
             </button>
           ))}
           <button type="button" aria-label="Toggle 3D view" aria-pressed={view3d} onClick={toggle3d}
+            title={view3d ? 'Switch to the 2D floor' : 'Switch to the 3D office'}
             style={{
               border: '1px solid #9bb7c6', padding: '4px 6px', cursor: 'pointer',
               background: view3d ? '#d7e5bb' : '#263e50',
               color: view3d ? '#142d44' : '#f4eddc', fontFamily: 'inherit', fontSize: 'inherit'
             }}>
-            {view3d ? '3D' : '2D'}
+            {view3d ? 'Go 2D' : 'Go 3D'}
           </button>
           {view3d && (
             <button type="button" aria-label="Toggle 3D quality" onClick={toggleQuality3d}
+              title={quality3d === 'high' ? 'High quality (shadows). Click for low quality: uses less memory and CPU' : 'Low quality. Click for high quality'}
               style={{
                 border: '1px solid #9bb7c6', padding: '4px 6px', cursor: 'pointer',
                 background: '#263e50', color: '#f4eddc', fontFamily: 'inherit', fontSize: 'inherit'

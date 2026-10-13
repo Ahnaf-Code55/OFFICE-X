@@ -142,10 +142,12 @@ function monitor(parent: THREE.Object3D, p: Palette, w: number, d: number): void
 
 /** Mesh-back ergonomic chair on a 5-star base with casters. */
 function chair(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
-  const seatW = Math.min(0.68, Math.max(0.46, w * 0.64));
-  const seatD = Math.min(0.62, Math.max(0.42, d * 0.48));
-  box(parent, p.main, seatW, 0.09, seatD, 0, 0.5, 0); // seat
-  const back = box(parent, p.dark, seatW * 0.88, 0.52, 0.045, 0, 0.95, -seatD / 2 + 0.03); // mesh back
+  // Seat and back run ~15% over real scale with brighter materials so chairs
+  // stay readable from the default far camera.
+  const seatW = Math.min(0.78, Math.max(0.53, w * 0.74));
+  const seatD = Math.min(0.71, Math.max(0.48, d * 0.55));
+  box(parent, p.light, seatW, 0.09, seatD, 0, 0.5, 0); // seat
+  const back = box(parent, p.main, seatW * 0.88, 0.6, 0.045, 0, 0.98, -seatD / 2 + 0.03); // mesh back
   back.rotation.x = -0.12;
   box(parent, p.metal, 0.05, 0.3, 0.05, 0, 0.68, -seatD / 2 + 0.05); // back post
   cylinder(parent, p.metal, 0.03, 0.03, 0.4, 0, 0.28, 0, 8); // gas lift
@@ -171,18 +173,33 @@ function shelf(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   }
 }
 
-/** Plain cabinet body with a door split line, handles, and a bevelled top. */
+/** Tall cabinet with a vertical and a horizontal door seam plus small handles. */
 function cabinet(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
-  const ww = Math.max(0.68, w * 0.82), dd = Math.max(0.48, d * 0.72), h = 1.28;
-  box(parent, p.main, ww, h, dd, 0, h / 2, 0);
-  box(parent, p.light, ww * 0.94, 0.05, dd * 0.94, 0, h + 0.02, 0);
-  box(parent, p.dark, 0.025, h * 0.8, 0.02, 0, h * 0.5, -dd / 2 - 0.012);
-  for (const x of [-0.07, 0.07]) box(parent, p.metal, 0.03, 0.18, 0.03, x, h * 0.52, -dd / 2 - 0.03);
+  const ww = Math.max(0.68, w * 0.82), dd = Math.max(0.48, d * 0.72), h = 1.55;
+  const front = -dd / 2;
+  box(parent, p.main, ww, h, dd, 0, h / 2, 0); // tall body
+  box(parent, p.light, ww * 0.94, 0.05, dd * 0.94, 0, h + 0.02, 0); // bevelled top
+  // Two door seams split the front into a double-door lower cupboard and a
+  // top compartment, which reads as storage rather than a blank block.
+  box(parent, p.dark, 0.025, h * 0.82, 0.02, 0, h * 0.47, front - 0.012); // vertical split
+  box(parent, p.dark, ww * 0.8, 0.025, 0.02, 0, h * 0.68, front - 0.012); // horizontal split
+  for (const x of [-0.07, 0.07]) box(parent, p.metal, 0.03, 0.16, 0.03, x, h * 0.6, front - 0.03); // handles
 }
 
 /** Slim conference table: thin top, veneer inlay, and two narrow panel legs. */
 function table(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   const ww = Math.max(1, w * 0.88), dd = Math.max(0.75, d * 0.78), y = 0.76;
+  // Large tables (roughly 4+ tiles long) get a muted warm rug slightly larger
+  // than the top. Built directly (not via box()) to keep the 0.02 height.
+  if (ww >= 3.4) {
+    const rw = ww + 0.5, rd = dd + 0.5;
+    const rug = new THREE.Mesh(
+      cachedGeometry(`rug/${dimsKey(rw, rd)}`, () => new THREE.BoxGeometry(rw, 0.02, rd)),
+      material(0x8a6f52, 0.95),
+    );
+    rug.position.set(0, 0.01, 0);
+    parent.add(rug);
+  }
   box(parent, p.main, ww, 0.1, dd, 0, y, 0);
   box(parent, p.light, ww * 0.9, 0.02, dd * 0.86, 0, y + 0.06, 0);
   for (const x of [-ww * 0.34, ww * 0.34]) box(parent, p.dark, 0.08, 0.7, dd * 0.6, x, 0.37, 0);
@@ -218,21 +235,35 @@ function plant(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
 
 function counter(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
   const ww = Math.max(0.9, w * 0.92), dd = Math.max(0.54, d * 0.76);
-  box(parent, p.dark, ww * 0.94, 0.88, dd * 0.78, 0, 0.44, 0.04);
-  box(parent, p.main, ww, 0.13, dd, 0, 0.93, 0);
+  box(parent, p.dark, ww * 0.94, 0.88, dd * 0.78, 0, 0.44, 0.04); // darker base
+  box(parent, p.main, ww, 0.13, dd, 0, 0.93, 0); // worktop slab
   box(parent, p.light, ww, 0.045, 0.055, 0, 1.02, -dd / 2 + 0.03);
   const panels = Math.max(1, Math.min(5, Math.floor(ww / 0.7)));
   for (let i = 1; i < panels; i++) box(parent, p.main, 0.025, 0.66, 0.03, -ww / 2 + ww * i / panels, 0.47, -dd * 0.4);
+  // Kitchen hint on the worktop: wide counters get a sink with a small tap,
+  // narrow ones a coffee machine. Both read from the default camera.
+  if (ww >= 1.5) {
+    const sx = -ww * 0.22, sz = dd * 0.08;
+    box(parent, p.dark, Math.min(0.44, ww * 0.3), 0.025, Math.min(0.32, dd * 0.5), sx, 1.0, sz); // inset basin
+    cylinder(parent, p.metal, 0.018, 0.018, 0.16, sx, 1.08, sz - dd * 0.24, 6); // tap neck
+    box(parent, p.metal, 0.03, 0.02, dd * 0.2, sx, 1.15, sz - dd * 0.12); // tap spout
+  } else {
+    box(parent, p.dark, 0.26, 0.3, 0.26, 0, 1.15, 0); // coffee machine body
+    box(parent, p.metal, 0.18, 0.12, 0.02, 0, 1.16, -0.14); // metal face
+  }
 }
 
-/** Plain appliance body with a door line, handle, bevelled top, and display. */
+/** Fridge/vending machine: tall body, door lines, vertical handle, emissive panel. */
 function appliance(parent: THREE.Object3D, p: Palette, w: number, d: number): void {
-  const ww = Math.max(0.65, w * 0.82), dd = Math.max(0.56, d * 0.74), h = 1.45;
-  box(parent, p.main, ww, h, dd, 0, h / 2, 0);
-  box(parent, p.light, ww * 0.94, 0.05, dd * 0.94, 0, h + 0.02, 0);
-  box(parent, p.dark, ww * 0.8, 0.025, 0.02, 0, h * 0.55, -dd / 2 - 0.012);
-  box(parent, p.metal, ww * 0.4, 0.035, 0.03, 0, h * 0.62, -dd / 2 - 0.03);
-  box(parent, p.screen, ww * 0.26, h * 0.09, 0.02, ww * 0.2, h * 0.8, -dd / 2 - 0.02);
+  const ww = Math.max(0.65, w * 0.82), dd = Math.max(0.56, d * 0.74), h = 1.8;
+  const front = -dd / 2;
+  box(parent, p.main, ww, h, dd, 0, h / 2, 0); // tall body
+  box(parent, p.light, ww * 0.94, 0.05, dd * 0.94, 0, h + 0.02, 0); // bevelled top
+  // Door lines: a horizontal freezer/fridge split plus one door edge seam.
+  box(parent, p.dark, ww * 0.86, 0.025, 0.02, 0, h * 0.62, front - 0.012);
+  box(parent, p.dark, 0.02, h * 0.8, 0.02, -ww * 0.43, h * 0.48, front - 0.012);
+  box(parent, p.metal, 0.035, h * 0.34, 0.035, ww * 0.36, h * 0.52, front - 0.035); // vertical handle
+  box(parent, p.screen, ww * 0.3, h * 0.12, 0.02, -ww * 0.18, h * 0.8, front - 0.02); // emissive panel
 }
 
 /** Plain crate with a lid seam, small handle, and a bevelled top edge. */
