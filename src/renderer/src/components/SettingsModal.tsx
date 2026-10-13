@@ -308,6 +308,12 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     return { maxTurns: Number.isFinite(n as number) && (n as number) > 0 ? Math.round(n as number) : undefined } as Partial<HarnessConfig>;
   };
   const [semMemOn, setSemMemOn] = useState<boolean>(cfgX.semanticMemory !== false);
+  const [savageOn, setSavageOn] = useState<boolean>((cfgX as { savageMode?: boolean }).savageMode !== false);
+  const toggleSavage = () => {
+    const next = !savageOn;
+    setSavageOn(next);
+    stage({ savageMode: next } as Partial<HarnessConfig>);
+  };
   const toggleSemMem = async () => {
     const next = !semMemOn;
     setSemMemOn(next);
@@ -1401,6 +1407,20 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           </div>
                           <PixelButton variant={semMemOn ? 'primary' : 'secondary'} size="sm" onClick={toggleSemMem}>
                             {semMemOn ? t('common.on') : t('common.off')}
+                          </PixelButton>
+                        </div>
+                      </div>
+
+                      <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />
+
+                      <div>
+                        <div style={sectionHead}>{t('settings.savage.title', 'Savage mode')}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            {t('settings.savage.desc', 'Agents talk blunt, sarcastic and unfiltered. Tone only; applies to agents started after you save.')}
+                          </span>
+                          <PixelButton variant={savageOn ? 'primary' : 'secondary'} size="sm" onClick={toggleSavage}>
+                            {savageOn ? t('common.on') : t('common.off')}
                           </PixelButton>
                         </div>
                       </div>
