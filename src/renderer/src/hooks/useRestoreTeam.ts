@@ -32,6 +32,16 @@ const listeners = new Set<() => void>();
  *  window in which you can hit a dismiss ✕ if you don't want an agent back. */
 export const AUTO_RESTORE_DELAY_MS = 2500;
 
+/** At boot only this many agents start on their own (each one is a whole CLI
+ *  process, ~150 MB, and six of them swap a 7 GB laptop to a crawl). The rest stay
+ *  on the restorable list; "restore team" brings them back on demand. Set
+ *  localStorage `officex.restoreAll` = '1' to restore everyone at boot as before. */
+export const AUTO_RESTORE_MAX = 2;
+
+function autoRestoreAll(): boolean {
+  try { return window.localStorage.getItem('officex.restoreAll') === '1'; } catch { return false; }
+}
+
 function emit(): void {
   for (const l of [...listeners]) l();
 }
@@ -69,13 +79,13 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
   /** Respawn every worker from the previous session with its ORIGINAL agent id,
    *  cwd, model and command — the hive workspace (memory.md, inbox, registry
    *  entry) reattaches by itself, no memory transplant needed. */
-  const restoreTeam = async (): Promise<void> => {
+  const restoreUpTo = async (limit: number): Promise<void> => {
     if (restoring) return;
     restoring = true;
     note = null;
     emit();
     const prevSel = useStore.getState().selectedId;
-    const restorableAgents = useStore.getState().restorableAgents;
+    const restorableAgents = useStore.getState().restorableAgents.slice(0, limit);
     // Tally every agent's outcome so the run ALWAYS leaves a visible trace — the
     // original bug was that every failure path was console-only, so a click that
     // couldn't spawn anything looked like a dead button.
@@ -234,7 +244,7 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
         autoStarted = true;
         autoRestoring = true;
         emit();
-        void restoreTeam().finally(() => { autoRestoring = false; emit(); });
+        void restoreUpTo(autoRestoreAll() ? Infinity : AUTO_RESTORE_MAX).finally(() => { autoRestoring = false; emit(); });
       }, AUTO_RESTORE_DELAY_MS);
     };
 
@@ -246,5 +256,7 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config?.onboardingComplete]);
 
+  // Click handlers pass an event as the first argument, so the public one takes none.
+  const restoreTeam = (): Promise<void> => restoreUpTo(Infinity);
   return { restoring: isRestoring, autoRestoring: isAutoRestoring, restoreNote, restoreTeam };
 }
