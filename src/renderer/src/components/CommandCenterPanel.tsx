@@ -210,7 +210,11 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
       {tab === 'triggers' && <TriggersTab />}
       {tab === 'trigger-history' && <TriggerHistoryTab />}
       {tab === 'memory' && <MemoryTab key={agent.id} godId={agent.id} who={selectedMemoryAgent ?? undefined} onWho={setSelectedMemoryAgent} />}
-      {tab === 'graph' && <MemoryGraphPanel godId={agent.id} onJumpToMemory={id => { setSelectedMemoryAgent(id); setTab('memory'); }} />}
+      {tab === 'graph' && <MemoryGraphPanel godId={agent.id} fullscreen={fullscreen}
+        onJumpToMemory={id => { setSelectedMemoryAgent(id); setTab('memory'); }}
+        onOpenChat={id => { useStore.getState().select(id); if (fullscreen) useStore.getState().refocusFullscreen(id); useStore.getState().requestCommandCenterTab('conversation'); setTab('conversation'); }}
+        onToggleFullscreen={() => { setFullscreen(fullscreen ? null : agent.id); useStore.getState().requestCommandCenterTab('graph'); }} />}
+
       {tab === 'activity' && <ActivityTab />}
       {tab === 'skills' && <SkillsTab agentCwd={agent.cwd} />}
       {tab === 'workers' && <WorkersTab />}
