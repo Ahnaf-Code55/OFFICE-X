@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { AgentOrganization } from '@shared/agentTeams';
 import type { AccentColorName } from '@/design/tokens';
 import type { OfficeCharacterName } from '@/scene/office/cast';
 import type { ThemeId } from '@/scene/office/themeRegistry';
@@ -19,6 +20,7 @@ import { preferredAgentRole } from '@shared/agentRole';
 import { isInboxNudge } from '@shared/hiveNudge';
 import { refocusAfterRemoval, focusOnLoad, restoreFocus } from './focusMode';
 import { chooseRosterSource } from './rosterSource';
+import { claimRosterWriter } from './rosterWriter';
 
 export type ToolKind =
   | 'Read' | 'Edit' | 'Write' | 'Bash' | 'WebFetch' | 'WebSearch'
@@ -40,6 +42,8 @@ export interface BlockReason {
 }
 
 export interface Agent {
+  /** Durable team labels and manager links; independent of engine permissions. */
+  organization?: AgentOrganization;
   id: string;
   name: string;
   /** which Office character represents this agent on the floor */
@@ -416,9 +420,11 @@ const rosterMirror: {
   selectedId: string | null;
 } = { agents: [], archived: [], restorable: [], queues: {}, selectedId: null };
 
+const ownsRosterWrite = claimRosterWriter(currentHome);
 let rosterFlush: ReturnType<typeof setTimeout> | null = null;
 
 function flushRosterNow(): void {
+  if (!ownsRosterWrite()) return;
   if (rosterFlush) { clearTimeout(rosterFlush); rosterFlush = null; }
   try {
     void window.cth?.rosterWrite?.({
@@ -436,6 +442,7 @@ function flushRosterNow(): void {
 /** Coalesce a burst of persist* calls into one disk write. Agent edits arrive in
  *  clusters (spawn writes agents + selection + queues in the same tick). */
 function scheduleRosterFlush(): void {
+  if (!ownsRosterWrite()) return;
   if (rosterFlush) return;
   rosterFlush = setTimeout(flushRosterNow, 500);
 }
@@ -446,6 +453,12 @@ function scheduleRosterFlush(): void {
 try {
   window.addEventListener('beforeunload', flushRosterNow);
 } catch { /* not a browser context (unit tests) */ }
+if (import.meta.hot) import.meta.hot.dispose(() => {
+  flushRosterNow();
+  window.removeEventListener('beforeunload', flushRosterNow);
+  if (rosterFlush) clearTimeout(rosterFlush);
+  rosterFlush = null;
+});
 
 function slimAgents(agents: Agent[]): PersistedAgent[] {
   return agents.map(({ recentAssistantText, recentTextTs, blockReason, contextTokens, contextLimit, seedPrompt, ...rest }) => {

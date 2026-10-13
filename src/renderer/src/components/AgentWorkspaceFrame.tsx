@@ -10,6 +10,7 @@ import { notifyThemeChangeAll } from './terminalPool';
 import { useRestoreTeam } from '@/hooks/useRestoreTeam';
 import type { HarnessConfig } from '@/store/config';
 import './agentWorkspace.css';
+import { AgentTeamDock } from './AgentTeamDock';
 
 export interface WorkspaceDestination {
   key: string;
@@ -105,15 +106,7 @@ export function AgentWorkspaceFrame({ agent, destinations, current, onNavigate, 
         <button onClick={() => onNavigate('terminal')}>Review</button>
       </div>}
       <div className="aw-content">{children}</div>
-      <div className="aw-agent-dock" aria-label="Office agents">
-        {agents.map(a => <button key={a.id} onClick={() => selectAgent(a.id)} aria-pressed={a.id === agent.id} title={`${a.name} · ${a.status}`}>
-          <SpritePortrait character={a.character} scale={0.55} /><span>{a.name}</span>
-        </button>)}
-        <button onClick={() => useStore.getState().setAddAgentOpen(true)} aria-label="Add agent" title="Add agent"><Icon name="plus" /></button>
-        {restorable.length > 0 && <button disabled={restoring} onClick={() => { void restoreTeam(); }} title={restoreNote || 'Restore the previous team'}>
-          {restoring ? 'Restoring…' : `Restore ${restorable.length}`}
-        </button>}
-      </div>
+      <AgentTeamDock agent={agent} onSelect={selectAgent} restoring={restoring} restoreCount={restorable.length} onRestore={() => { void restoreTeam(); }} />
       <div className="aw-utility" aria-label="Agent utilities">
         <button onClick={() => useStore.getState().setIdeOpen(true, agent.id)}><Icon name="code" />{t('agentDetail.ide')}</button>
         <button onClick={() => useStore.getState().setFullscreen(fullscreen ? null : agent.id)} title="Focus mode"><Icon name="expand" /></button>
