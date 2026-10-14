@@ -194,7 +194,7 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     canReceiveInbox: true,
     // Longest-context Claude variant — matches the "give Michael a bigger model"
     // advisory and the Recommended tag on the orchestrator picker.
-    recommendedOrchestratorModel: 'claude-opus-4-8[1m]',
+    recommendedOrchestratorModel: 'claude-opus-5-5',
     resumeFlag: '--resume',
     // Official Claude Code install (npm global). Used by the missing-CLI auto-install.
     installCommand: 'npm install -g @anthropic-ai/claude-code',
@@ -247,9 +247,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     canReceiveInbox: true,
     initialPromptFlag: undefined,
     positionalInitialPrompt: true,
-    // Codex's long-context coding model for the orchestrator role. // TODO-verify
-    // the exact codex CLI model id (couldn't install the codex CLI to confirm).
-    recommendedOrchestratorModel: 'gpt-5-codex',
+    // Orchestrator role on Codex: GPT 6.1 Sol (needs Codex CLI >= 0.162).
+    recommendedOrchestratorModel: 'gpt-6.1-sol',
     // Codex resumes via a SUBCOMMAND, not a flag: `codex resume [OPTIONS]
     // [SESSION_ID]`. A `--resume <id>` flag does not exist, which is why restarts
     // used to silently start a brand-new session instead of continuing.
