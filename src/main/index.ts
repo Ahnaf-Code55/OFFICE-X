@@ -2960,8 +2960,8 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     // modelForRole resolves it and that wins over the worker-oriented defaultModel.
     if (!args.includes('--model')) {
       const m = opts.hive.isGod
-        ? modelForRole(opts.hive, cfg)
-        : cfg.defaultModel ?? modelForRole(opts.hive, cfg);
+        ? modelForRole(opts.hive, cfg, provider)
+        : cfg.defaultModel ?? modelForRole(opts.hive, cfg, provider);
       if (m) args.push('--model', m);
     }
     // Name the Remote Control session after the agent (Michael, Jim, Dev1…) so it

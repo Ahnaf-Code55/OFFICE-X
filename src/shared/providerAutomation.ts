@@ -105,6 +105,16 @@ const CONTEXT_COMMANDS: Record<AgentProvider, ProviderContextCommands> = {
   // `compact` altName, so `/compact` would land as plain text here.
   qwen: { compact: '/compress', clear: '/clear', compactTakesFocus: true },
 
+  // Hermes Agent v0.21.5 hermes_cli/commands.py (read from the installed source):
+  //   CommandDef("compress", "Compress conversation context", aliases=("compact",),
+  //              args_hint="[here [N] | focus topic | --preview|--dry-run]")  → takes a focus
+  //   CommandDef("new", "Start a new session (fresh session ID + history)")
+  // `/new` is the true fresh-context verb (`/clear` also resets but repaints the screen).
+  hermes: { compact: '/compress', clear: '/new', compactTakesFocus: true },
+
+  // Kilo Code CLI: its slash commands are not verified here (no local install), so nothing is typed.
+  kilo: { compact: null, clear: null, compactTakesFocus: false },
+
   // opencode binary's command registry, verbatim:
   //   { title:"Compact session", value:"session.compact",
   //     slash:{ name:"compact", aliases:["summarize"] }, run: … }
