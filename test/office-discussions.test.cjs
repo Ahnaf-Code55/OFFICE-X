@@ -28,7 +28,7 @@ test('quiet rooms do not wake AIs, even for mentions or unsolicited agent chat',
 test('starting/joining a meeting makes zero paid acknowledgments; a topic starts a bounded round',async t=>{
  const o=office(t);await o.chat.post('everyone','Starting the meeting, everyone join','');assert.equal(o.delivered.length,0);assert.equal(o.room('everyone').active,true);
  await o.chat.post('everyone','How should we design the cloud deployment?','');assert.equal(o.delivered.length,1);assert.equal(o.delivered[0].id,'atlas');assert.equal(o.room('everyone').round.turns.length,MAX_ROOM_TURNS);
- assert.match(o.delivered[0].body,/your own assessment/);assert.match(o.delivered[0].body,/concrete flaw/);assert.match(o.delivered[0].body,/not authorization/);
+ assert.match(o.delivered[0].body,/your own assessment/);assert.match(o.delivered[0].body,/concrete flaw/);assert.match(o.delivered[0].body,/not authorization/);assert.match(o.delivered[0].body,/only file change this discussion authorizes/);
 });
 test('reports schedule relevant manager + worker + coordinator sequentially, with no AI mention chain',async t=>{
  const o=office(t);await o.chat.post('everyone','Please report backend API progress','');assert.equal(o.delivered[0].id,'forge');assert.equal(o.delivered.length,1);

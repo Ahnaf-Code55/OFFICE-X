@@ -56,6 +56,7 @@ export function AskMeTab() {
   const setAnswerDraft = useStore((s) => s.setAnswerDraft);
   const openTaskDetail = useStore((s) => s.openTaskDetail);
   const [sending, setSending] = useState<string | null>(null);
+  const [error, setError] = useState('');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -82,29 +83,20 @@ export function AskMeTab() {
     .filter(waitsOnHuman)
     .sort((a, b) => compareByNewestAsk(openQuestion(a), openQuestion(b)));
 
-  /**
-   * Apply `patch` to the OPEN humanQA entry of one card, on the RAW ledger.
-   * Returns whether it landed.
-   *
-   * Re-reads tasks.json first rather than writing this view's 5s-old snapshot,
-   * because `hive:writeTasks` treats the incoming array as the card MEMBERSHIP:
-   * writing our snapshot back would delete any card the god added since the last
-   * poll. Re-locating the open question by its text also means an answer can
-   * never land on a different question the god swapped in underneath us — in
-   * that case nothing is written and the draft is kept.
-   */
-
+  // Compare the question history in main immediately before writing it. A new
+  // ask or another answer invalidates this view; refresh and keep the draft.
   const sendAnswer = async (task: HiveTask) => {
     const text = (drafts[task.id] ?? '').trim();
     const open = openQuestion(task);
     if (!text || !open || sending) return;
     setSending(task.id);
+    setError('');
     try {
       // 1) Document the answer ON the card.
       const next = tasks.map((t) => {
         if (t.id !== task.id) return t;
         const qa = (t.humanQA ?? []).map((e) =>
-          e === open || (e.q === open.q && !e.a)
+          e === open
             ? { ...e, a: text, answeredAt: new Date().toISOString() }
             : e
         );
@@ -112,7 +104,7 @@ export function AskMeTab() {
       });
       const updated = next.find((candidate) => candidate.id === task.id);
       const result = updated
-        ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA })
+        ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA }, task.humanQA ?? [])
         : { ok: false };
       if (!result.ok) throw new Error('task changed before answer could be saved');
       setTasks(next);
@@ -129,7 +121,10 @@ export function AskMeTab() {
         ].join('\n')
       }, 'human');
       setAnswerDraft(task.id, '');
-    } catch { /* leave the draft so the user can retry */ }
+    } catch {
+      setError('This question changed or could not be saved. Review the latest card and retry; your draft is kept.');
+      await refresh();
+    }
     setSending(null);
   };
 
@@ -144,21 +139,25 @@ export function AskMeTab() {
     const next = tasks.map((t) => {
       if (t.id !== task.id) return t;
       const qa = (t.humanQA ?? []).map((e) =>
-        e === open || (e.q === open.q && !e.a && !e.dismissedAt)
+        e === open
           ? { ...e, dismissedAt: new Date().toISOString() }
           : e
       );
       return { ...t, humanQA: qa };
     });
-    setTasks(next); // optimistic — the card disappears immediately
+    setSending(task.id);
+    setError('');
     try {
       const updated = next.find((candidate) => candidate.id === task.id);
       const result = updated
-        ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA })
+        ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA }, task.humanQA ?? [])
         : { ok: false };
       if (!result.ok) throw new Error('task changed before ask could be dismissed');
     } catch {
-      setTasks(tasks); // restore on failure so the user can retry
+      setError('This question changed or could not be dismissed. Review the latest card and retry.');
+    } finally {
+      await refresh();
+      setSending(null);
     }
   };
 
@@ -167,6 +166,7 @@ export function AskMeTab() {
     // memory viewer uses. Pixelify Sans (font-ui) is too chunky for prose like
     // questions and answers. Display/badge bits keep their explicit faces.
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: 'var(--cth-paper-200)', padding: 10, display: 'flex', flexDirection: 'column', gap: 10, fontFamily: 'var(--cth-font-mono)' }}>
+      {error && <p role="alert" style={{ color: 'var(--cth-coral)', margin: 0 }}>{error}</p>}
       {waiting.length === 0 && (
         <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--cth-ink-500)', fontSize: 12 }}>
           {translate('askMe.emptyTitle')}<br />

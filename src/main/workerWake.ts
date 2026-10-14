@@ -5,14 +5,13 @@
  * path for a worker that has gone quiet at its prompt: it polls on a setInterval
  * in the renderer, so a throttled/occluded window (Chromium suspends background
  * setInterval timers) can miss the moment mail lands and the worker then sits on
- * an undrained inbox forever — the orchestrator ("god") never has this problem
- * because the main process re-engages it on its own heartbeat cadence.
+ * an undrained inbox forever. The orchestrator needs the same fallback when
+ * the optional heartbeat is disabled.
  *
  * This watchdog is the worker-side counterpart: on a cadence it finds live
  * workers that are genuinely idle, have newly arrived inbox mail, are not
  * paused / not awaiting a human decision, and have not been nudged recently —
- * then types the same guarded nudge the renderer would have, directly into the
- * PTY. Message ids make this edge-triggered: unchanged undrained mail is never
+ * then queues the same nudge through the renderer's terminal ownership guards. Message ids make this edge-triggered: unchanged undrained mail is never
  * re-announced once a minute forever.
  *
  * Safety mirrors the renderer's guarded queue-drain (useHive.ts dispatch):
@@ -27,7 +26,7 @@
  *    nudge don't stack on top of each other.
  *
  * Deliberately the renderer's own nudge text, and the same type pattern the
- * renderer's submitToPty uses (text first, Enter as a separate keystroke).
+ * renderer's submitToPty uses after draft, native prompt and busy checks.
  *
  * No electron import — unit-testable (mirrors ControlRegistry).
  */
@@ -69,9 +68,9 @@ export function classifyHook(event: string | undefined, message: string | undefi
 
 /** One worker's live facts, gathered by the caller each beat. */
 export interface WorkerWakeFacts {
-  /** Worker agent id (god is never a candidate). */
+  /** Agent id, including the orchestrator when it has pending mail. */
   agentId: string;
-  /** True when this agent is the orchestrator — god is never nudged. */
+  /** True when this agent is the orchestrator (same pending-mail guards). */
   isGod?: boolean;
   /** Live PTY id, or undefined when the agent has no terminal. */
   ptyId?: string;
@@ -127,7 +126,7 @@ export class WorkerWakeWatchdog {
         this.announcedInboxIds.delete(f.agentId);
         continue;
       }
-      if (f.isGod || !f.ptyId) continue;
+      if (!f.ptyId) continue;
       if (f.autoDeliveryPaused || f.paused || f.halted) continue;
       if (f.lastOutputAt <= 0) continue; // never produced output → still booting
       if (now - f.lastOutputAt < WORKER_WAKE_IDLE_MS) continue; // mid-turn

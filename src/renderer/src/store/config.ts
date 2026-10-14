@@ -206,11 +206,9 @@ export type { CatalogModel, ModelCatalog } from '@shared/modelCatalogPayload';
  *    both "default" is what made the two impossible to tell apart.
  *  - codex: current OpenAI models offered by Codex. The command field stays
  *    editable and `codex --model <id>` is the source of truth.
- *  - antigravity: agy's `--model` takes the DISPLAY-NAME LABEL exactly as
- *    `agy models` prints it (verified: agy logs `Propagating selected model
- *    override … label="…"`), not a slug — so these ids ARE labels, spaces and
- *    parens included; buildSpawnCommand quotes them and the command tokenizer
- *    keeps them whole. `agy models` is the source of truth for the live list.
+ *  - antigravity: agy's `--model` takes the slug in the first column of
+ *    `agy models`. Gemini 3.8 and Claude 5.5 effort tiers are separate slugs.
+ *    The installed CLI is the source of truth for account availability.
  *  - gemini: stable aliases accepted by the official Google Gemini CLI. They
  *    follow the CLI instead of pinning preview model ids that drift.
  *  - qwen: qwen-code (`qwen`), the proxy-bridge CLI driving an OpenAI-compatible

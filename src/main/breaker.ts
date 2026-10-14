@@ -184,6 +184,13 @@ export class CircuitBreaker {
    *  no-progress arm reads); the SAME key in a row is the loop signal. */
   recordToolUse(agentId: string, toolName: string | undefined, toolInput: unknown, now = Date.now()): void {
     const s = this.get(agentId);
+    // An incomplete bridge event says nothing about whether two calls had the
+    // same arguments. Keep the other guardrails; do not invent a repeat key.
+    if (!toolName || toolInput === undefined || toolInput === null) {
+      s.repeatKey = null;
+      s.repeatCount = 0;
+      return;
+    }
     const key = this.toolKey(toolName, toolInput);
     if (key === s.repeatKey) {
       s.repeatCount += 1;

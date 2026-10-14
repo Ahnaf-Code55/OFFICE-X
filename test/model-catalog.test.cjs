@@ -42,12 +42,13 @@ const SHIPPED = {
     [undefined, "CLI default"],
     ["gemini-3.8-flash-high", "Gemini 3.8 Flash · High"],
     ["gemini-3.8-flash-medium", "Gemini 3.8 Flash · Med"],
-    ["gemini-3.7-flash-high", "Gemini 3.7 Flash · High"],
-    ["gemini-3.7-flash-medium", "Gemini 3.7 Flash · Med"],
-    ["gemini-3.6-flash-high", "Gemini 3.6 Flash · High"],
-    ["gemini-3.6-flash-medium", "Gemini 3.6 Flash · Med"],
-    ["gemini-3.1-pro-high", "Gemini 3.1 Pro · High"],
-    ["claude-sonnet-4-6", "Claude Sonnet 4.6"]
+    ["gemini-3.8-flash-low", "Gemini 3.8 Flash · Low"],
+    ["claude-opus-5-5-high", "Claude Opus 5.5 · High"],
+    ["claude-opus-5-5-medium", "Claude Opus 5.5 · Med"],
+    ["claude-opus-5-5-low", "Claude Opus 5.5 · Low"],
+    ["claude-sonnet-5-5-high", "Claude Sonnet 5.5 · High"],
+    ["claude-sonnet-5-5-medium", "Claude Sonnet 5.5 · Med"],
+    ["claude-sonnet-5-5-low", "Claude Sonnet 5.5 · Low"]
   ],
   qwen: [
     [undefined, "default"],
@@ -270,4 +271,14 @@ test('the filter reads the version the app was built with', () => {
     delete globalThis.__APP_VERSION__;
   }
   assert.equal(runningAppVersion(), '');
+});
+
+test('Antigravity exposes the currently available Gemini 3.8 and Claude 5.5 tiers', () => {
+  const {providerPreset}=loadTs('src/shared/agentProvider.ts');
+  const ids=new Set(modelsForProvider('antigravity').map(m=>m.id));
+  for(const family of ['gemini-3.8-flash','claude-opus-5-5','claude-sonnet-5-5']) {
+    for(const tier of ['low','medium','high']) assert(ids.has(`${family}-${tier}`));
+  }
+  assert(ids.has(providerPreset('antigravity').recommendedOrchestratorModel));
+  assert(!ids.has('gemini-3.1-pro-high'));
 });

@@ -210,6 +210,8 @@ export interface SlackIncomingMessage {
 /** A direct hive message addressed to a provider that cannot drain hive inbox.
  *  The renderer turns this into a queued terminal work order for that agent. */
 export interface HiveTerminalHandoffEvent {
+  conversation: string;
+  outboxDir: string;
   id: string;
   from: string;
   to: string;
@@ -1106,8 +1108,9 @@ const api = {
   /** Atomically patch one named card without replacing unrelated cards/fields. */
   hivePatchTask: (
     id: string,
-    patch: Partial<Omit<HiveTask, 'id'>>
-  ): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch),
+    patch: Partial<Omit<HiveTask, 'id'>>,
+    expectedHumanQA?: HumanQA[]
+  ): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch, expectedHumanQA),
   /** Atomically remove one named card from the latest main-process ledger. */
   hiveDeleteTask: (id: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:deleteTask', id),

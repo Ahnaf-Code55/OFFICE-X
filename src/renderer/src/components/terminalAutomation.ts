@@ -18,10 +18,36 @@ const INTERACTIVE_COMMANDS = new Set([
   '/sessions'
 ]);
 
-/** First-run trust dialogs appear before hooks are installed. Their Enter key
- * must never be supplied by an automated prompt or inbox nudge. */
+/** Native trust and tool approvals can appear without hook events. Their Enter
+ * key must never be supplied by an automated prompt or inbox nudge. */
 export function hasNativePermissionPrompt(screen: string): boolean {
-  return /^\s*(?:Trust this folder\?|Do you trust the contents of this project\?|Would you like to run\b|Do you want to (?:run|allow|approve|proceed)\b)/im.test(screen);
+  return /^\s*(?:Trust this folder\?|Do you trust the contents of this project\?|Would you like to run\b|Run this command\?|Requesting permission for:|Do you want to (?:run|allow|approve|proceed)\b|Allow (?:creation|editing|deletion|execution|reading) of (?:this|the) (?:file|command)\?)/im.test(screen);
+}
+
+export type NativeTerminalPrompt = 'permission' | 'feedback' | 'quota' | 'model-choice' | null;
+export function nativeTerminalPrompt(screen: string): NativeTerminalPrompt {
+  if (hasNativePermissionPrompt(screen)) return 'permission';
+  if (/^\s*Approaching rate limits\s*$/m.test(screen)
+    && /^\s*Switch to \S+ for lower credit usage\?/m.test(screen)
+    && /Keep current model/.test(screen) && /enter select · esc back/.test(screen)) return 'model-choice';
+  // Antigravity consumes the next key in this survey instead of the work prompt.
+  if (/^\s*How's the CLI experience so far\? Help us improve:/im.test(screen)
+    && /\[0\]\s*Skip/i.test(screen)) return 'feedback';
+  // A failed turn returns to an empty input prompt. It is not ready for another
+  // automated call: keep mail queued until the owner changes model or retries.
+  // Only accept an error at the end of the latest turn, not old scrollback above
+  // a subsequent successful answer or running turn.
+  const quota = /^\s*⚠\s*Individual quota reached\.[\s\S]*?^\s*Error ID:[^\n]+\n([\s\S]*)/m.exec(screen);
+  if (quota && quota[1].split('\n').every(line => /^\s*(?:[─━-]+|>.*|\? for shortcuts.*)?\s*$/.test(line))) return 'quota';
+  return null;
+}
+
+/** Hookless Antigravity turns can think without a tool event. The live spinner
+ * and cancel footer distinguish that turn from completed reasoning in history. */
+export function nativeTerminalBusy(screen: string): boolean {
+  return nativeTerminalPrompt(screen) === null
+    && /^\s*[\u2801-\u28ff]\s+\S/m.test(screen)
+    && /esc to cancel/i.test(screen);
 }
 
 export function opensInteractiveTerminalUi(input: string): boolean {
@@ -71,6 +97,8 @@ export interface TerminalAutomationState {
   settleUntil: number;
   inputDirtyAt?: number; // last keystroke that left a draft; absent ⇒ never expires
   pickerOpenedAt?: number; // when the picker latched; absent ⇒ never expires
+  nativePrompt?: NativeTerminalPrompt;
+  nativeBusy?: boolean;
 }
 
 /** A picker nobody has interacted with for STALE_PICKER_MS is treated as gone. */
@@ -84,7 +112,7 @@ export function isStaleTerminalPicker(
 }
 
 /** Why automation may not own the prompt right now, or null when it may. */
-export type TerminalAutomationBlock = 'exited' | 'picker' | 'draft' | 'settling' | null;
+export type TerminalAutomationBlock = 'exited' | 'picker' | 'draft' | 'settling' | 'working' | NativeTerminalPrompt;
 
 /** A draft nobody has touched for STALE_INPUT_MS is treated as abandoned. */
 export function isStaleTerminalDraft(
@@ -101,6 +129,8 @@ export function terminalAutomationBlock(
   now = Date.now()
 ): TerminalAutomationBlock {
   if (state.exited) return 'exited';
+  if (state.nativePrompt) return state.nativePrompt;
+  if (state.nativeBusy) return 'working';
   if (state.pickerOpen && !isStaleTerminalPicker(state, now)) return 'picker';
   if (state.inputDirty && !isStaleTerminalDraft(state, now)) return 'draft';
   if (now < state.settleUntil) return 'settling';

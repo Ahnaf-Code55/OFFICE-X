@@ -115,10 +115,12 @@ function hookCommandsUnder(home) {
 
 const usesLauncher = (cmd, launcher) => cmd.startsWith(launcher) || cmd.startsWith(`"${launcher}"`);
 
-async function run(cmd, env) {
+async function run(cmd, env, payload = { hook_event_name: 'Stop', session_id: 's1' }) {
   return new Promise((resolve) => {
     const child = spawn('/bin/sh', ['-c', cmd], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stderr = '';
+    let stdout = '';
+    child.stdout.on('data', (d) => { stdout += d; });
     child.stderr.on('data', (d) => { stderr += d; });
     // These commands are EXPECTED to exit before the payload lands — the control
     // case below asserts `node "<shim>"` exits 127 under a stripped PATH. A child
@@ -132,8 +134,8 @@ async function run(cmd, env) {
     child.stdin.on('error', (e) => {
       if (e.code !== 'EPIPE') stderr += `stdin: ${e.message}\n`;
     });
-    child.stdin.end(JSON.stringify({ hook_event_name: 'Stop', session_id: 's1' }));
-    child.on('close', (code) => resolve({ code, stderr }));
+    child.stdin.end(JSON.stringify(payload));
+    child.on('close', (code) => resolve({ code, stderr, stdout }));
   });
 }
 
@@ -149,6 +151,44 @@ test('ensureHive writes an executable bundled-node launcher', async (t) => {
   assert.match(body, /ELECTRON_RUN_AS_NODE=1/, 'without this the binary opens a second app window');
   assert.ok(body.includes(process.execPath), 'execPath is re-baked each bootstrap so an app move/update heals');
   if (POSIX) assert.ok(fs.statSync(launcher).mode & 0o111, 'must be executable');
+});
+
+test('Antigravity hooks normalize native sessions and use each event output contract', { skip: !POSIX }, async (t) => {
+  const { home, harness } = isolatedHomes(t, 'md-agy-hooks-', '/tmp');
+  const hive = new HiveManager(() => harness);
+  hive.ensureHive();
+  hive.installAgyHooks();
+  const group = JSON.parse(fs.readFileSync(path.join(home, '.gemini/config/hooks.json'), 'utf8'))['munder-hive'];
+  const sock = path.join(harness, 'hive/hooks.sock');
+  let reply = {}, received;
+  const server = net.createServer(c => {
+    let data = '';
+    c.on('data', d => { data += d; if (data.includes('\n')) { received = JSON.parse(data); c.end(JSON.stringify(reply)); } });
+    c.on('error', () => {});
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(sock, resolve); });
+  t.after(() => server.close());
+  const cases = [
+    ['SessionStart', { hookSpecificOutput: { additionalContext: 'standing goal' } }, { injectSteps: [{ systemMessage: { systemMessage: 'standing goal' } }] }],
+    ['PreInvocation', { hookSpecificOutput: { additionalContext: 'steer' } }, { injectSteps: [{ ephemeralMessage: 'steer' }] }],
+    ['PreToolUse', { hookSpecificOutput: { permissionDecision: 'deny', permissionDecisionReason: 'paused' } }, { decision: 'deny', reason: 'paused' }],
+    ['PreToolUse', {}, null],
+    ['Stop', { decision: 'block', reason: 'pending' }, { decision: 'continue', reason: 'pending' }],
+    ['Stop', { continue: false, stopReason: 'operator halt' }, null],
+    ['PostInvocation', { continue: false, stopReason: 'operator halt' }, { terminationBehavior: 'terminate' }]
+  ];
+  for (const [event, response, expected] of cases) {
+    reply = response;
+    const handler = event === 'PreToolUse' ? group[event][0].hooks[0] : group[event][0];
+    const result = await run(handler.command, { PATH: STRIPPED_PATH, HOME: home, AGENT_ID: 'a1', HIVE_SOCK: sock }, {
+      conversationId: 'native-agy-session', workspacePaths: [harness], toolCall: { name: 'run_command', args: { CommandLine: 'node check.cjs' } }
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(result.stdout ? JSON.parse(result.stdout) : null, expected, event);
+    assert.equal(received.session_id, 'native-agy-session');
+    assert.equal(received.hook_event_name, event);
+    assert.deepEqual(received.tool_input, { CommandLine: 'node check.cjs' });
+  }
 });
 
 test('the claude hook + statusLine commands run through the launcher', async (t) => {
@@ -190,6 +230,15 @@ test('every hook installer routes through the launcher — none left on bare nod
   hive.installGrokHooks();
   hive.installGeminiHooks(path.join(home, 'hive/agents/a1'));
   hive.installCodexHooks(path.join(home, 'hive/agents/a1'), 'a1');
+
+  const agy = JSON.parse(fs.readFileSync(path.join(home, '.gemini/config/hooks.json'), 'utf8'))['munder-hive'];
+  for (const event of ['SessionStart', 'PreInvocation', 'PostInvocation', 'Stop']) {
+    assert.ok(agy[event]?.length, `${event} must report native conversation identity`);
+    for (const handler of agy[event]) {
+      assert.equal(typeof handler.command, 'string', `${event} requires flat command handlers`);
+      assert.equal(handler.hooks, undefined, `${event} cannot use tool matcher wrappers`);
+    }
+  }
 
   const launcher = launcherIn(home);
   const commands = hookCommandsUnder(home);

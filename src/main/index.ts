@@ -358,7 +358,7 @@ function standingGoalFromRoster(agentId: string): string | null {
   return null;
 }
 // Worker inbox-wake watchdog (#151): finds idle workers with undrained inbox mail
-// and types the same guarded nudge the renderer would have (so a throttled
+// and queues the same guarded nudge the renderer would have (so a throttled
 // background window can't leave a worker parked on an unread inbox forever).
 // HookServer feeds it the hook stream so a permission/HITL prompt blocks nudges.
 const workerWake = new WorkerWakeWatchdog();
@@ -3659,12 +3659,15 @@ ipcMain.handle('hive:addTask', (_evt, task: unknown) => {
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
   return { ok: hive.addTask(task as HiveTask) };
 });
-ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown) => {
+ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown, expectedHumanQA: unknown) => {
   if (typeof id !== 'string' || !id || !patch || typeof patch !== 'object' || Array.isArray(patch)) {
     return { ok: false, error: 'invalid task patch' };
   }
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
-  return { ok: hive.patchTask(id, patch as Partial<Omit<HiveTask, 'id'>>) };
+  if (expectedHumanQA !== undefined && !Array.isArray(expectedHumanQA)) {
+    return { ok: false, error: 'invalid human question history guard' };
+  }
+  return { ok: hive.patchTask(id, patch as Partial<Omit<HiveTask, 'id'>>, expectedHumanQA as HiveTask['humanQA']) };
 });
 ipcMain.handle('hive:deleteTask', (_evt, id: unknown) => {
   if (typeof id !== 'string' || !id) return { ok: false, error: 'invalid task id' };
@@ -6389,22 +6392,13 @@ function bootstrapHiveServices(): void {
 const WORKER_WAKE_POLL_MS = 15_000;
 let workerWakeTimer: ReturnType<typeof setInterval> | null = null;
 
-/** Type the renderer's guarded nudge into one worker's PTY — text first, Enter a
- *  tick later (the exact submitToPty pattern: a single-chunk write would land the
- *  "\r" inside the input box and never submit). Best-effort + never throws. */
-function nudgeWorker(ptyId: string, ids: string[] = []): void {
-  // Same text the renderer queues (#187's inboxNudgeText), so the two wake paths
-  // produce byte-identical nudges: the queue's one-pending rule recognises either
-  // via isInboxNudge, and a watchdog nudge names its ids so the agent can still
-  // tell "I filed this last turn" from "woken for nothing".
-  const wrote = ptyManager.write(ptyId, inboxNudgeText(ids));
-  if (!wrote.ok) { console.warn(`[worker-wake] write failed for ${ptyId}: ${wrote.error}`); return; }
-  setTimeout(() => {
-    try {
-      const submitted = ptyManager.write(ptyId, '\r');
-      if (!submitted.ok) console.warn(`[worker-wake] submit failed for ${ptyId}: ${submitted.error}`);
-    } catch (e) { console.error('[worker-wake] submit threw:', e); }
-  }, 400); // past Codex's ~120ms paste-burst window, or its Enter becomes a newline
+/** Wake through the existing guarded queue. Raw PTY writes could select a
+ * native approval or overwrite a draft when hook notifications are missing. */
+function nudgeWorker(agentId: string, ids: string[] = []): void {
+  liveWebContents()?.send('hive:enqueueToAgent', {
+    targetId: agentId,
+    text: inboxNudgeText(ids)
+  });
 }
 
 /** Main-process inbox-wake beat (issue #151, fix A): the renderer's idle nudge
@@ -6414,16 +6408,16 @@ function nudgeWorker(ptyId: string, ids: string[] = []): void {
  *  it gathers live-worker facts (PTY quiescence, inbox depth, control flags) and
  *  lets WorkerWakeWatchdog.decide apply the exact renderer guards (idle-only,
  *  post-boot-grace, not paused/halted, no pending HITL, cooldown), then types the
- *  same nudge the renderer would have. God is never a candidate (its heartbeat
- *  path already re-engages it). */
+ *  same nudge the renderer would have. Pending orchestrator mail also qualifies;
+ *  its optional heartbeat may be disabled. */
 function runWorkerWakeBeat(): void {
   if (!hive.enabled()) return;
   const reg = hive.registry();
-  if (!reg?.agents || !reg.godId) return;
+  if (!reg?.agents || !reg.godId || !liveWebContents()) return;
   const now = Date.now();
   const facts: WorkerWakeFacts[] = [];
   for (const [agentId, a] of Object.entries(reg.agents)) {
-    if (agentId === reg.godId || a?.archived) continue;
+    if (a?.archived) continue;
     const ptyId = ptyForAgent(agentId);
     if (!ptyId) continue;
     const snap = control.snapshot(agentId);
@@ -6447,7 +6441,7 @@ function runWorkerWakeBeat(): void {
     const ids = hive.inbox(agentId).map((m) => m.id).filter(Boolean);
     if (!ids.length) { console.log(`[worker-wake] ${agentId} drained before delivery, skipping`); continue; }
     console.log(`[worker-wake] nudging ${agentId} on ${ptyId} (${ids.length} pending)`);
-    nudgeWorker(ptyId, ids);
+    nudgeWorker(agentId, ids);
   }
 }
 

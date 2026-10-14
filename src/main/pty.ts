@@ -1,3 +1,4 @@
+import { INITIAL_TERMINAL_SIZE } from '../shared/terminalGeometry';
 import * as pty from 'node-pty';
 import type { WebContents } from 'electron';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -674,8 +675,8 @@ export class PtyManager {
       }
       const proc = pty.spawn(file, spawnArgs, {
         name: 'xterm-256color',
-        cols: opts.cols ?? 100,
-        rows: opts.rows ?? 30,
+        cols: opts.cols ?? INITIAL_TERMINAL_SIZE.cols,
+        rows: opts.rows ?? INITIAL_TERMINAL_SIZE.rows,
         cwd: opts.cwd,
         // Inherited env minus the parent Claude session's identity markers,
         // then the app's defaults and locale, then per-agent values — see

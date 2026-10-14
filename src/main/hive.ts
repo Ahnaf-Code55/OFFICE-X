@@ -41,6 +41,7 @@ import { MCP_CATALOG } from '../shared/mcpCatalog';
 import { selectBroadcastTargets } from '../shared/broadcast';
 import { preferredAgentRole } from '../shared/agentRole';
 import { mergeTaskLedger } from '../shared/taskLedger';
+import { hiveReplyInstruction } from '../shared/hiveReply';
 import { expandTilde } from './fs';
 import { resolveGodName } from '../shared/godIdentity';
 import { preserveCodexProjectTrust } from './codexProjectTrust';
@@ -157,11 +158,13 @@ export interface RegistryAgent extends AgentMeta {
    *  "do not dispatch to them", not "they are gone", which is why it is its own
    *  flag rather than a reuse of `archived` or a breaker level. */
   onHold?: boolean;
-  /** Most recent Claude Code session_id seen for this agent (Lane A #6.6a),
+  /** Most recent session_id for this agent's current provider (Lane A #6.6a),
    *  captured from hook payloads. Doubles as the `--resume` key (idempotent
    *  resume after a crash/restart) AND the cost accounting/dedup key on every
    *  AgentUsageSample / cost-ledger row. */
   sessionId?: string;
+  /** Conversation ids belong to a provider; keep history when switching engines. */
+  sessionsByProvider?: Partial<Record<AgentProvider, string>>;
   /** Whether `cwd` is actually usable for a (re)spawn — i.e. an ABSOLUTE path
    *  that exists as a directory. Computed + persisted at spawn so the roster
    *  reliably exposes each worker's environment validity. A non-absolute fragment
@@ -765,9 +768,15 @@ export class HiveManager {
     // Store the EXPANDED cwd, never the raw `~/…` the user typed — the registry is
     // read by hooks, the roster and the worker watcher, none of which run a shell.
     const cwd = this.cwdValidity(meta.cwd);
+    const previousProvider = prev?.provider ?? 'claude';
+    const nextProvider = meta.provider ?? 'claude';
+    const sessionsByProvider = { ...prev?.sessionsByProvider };
+    if (prev?.sessionId) sessionsByProvider[previousProvider] = prev.sessionId;
     reg.agents[meta.id] = {
       ...prev,
       ...meta,
+      sessionId: previousProvider === nextProvider ? prev?.sessionId : sessionsByProvider[nextProvider],
+      ...(Object.keys(sessionsByProvider).length ? { sessionsByProvider } : {}),
       capabilities: meta.capabilities ?? prev?.capabilities ?? [],
       role,
       status: 'idle',
@@ -1141,7 +1150,12 @@ export class HiveManager {
       const reg = this.registry();
       const agent = reg.agents[agentId];
       if (!agent || agent.sessionId === sessionId) return; // unknown agent or unchanged → no write
+      // A late hook/usage sample from the stopped engine must not overwrite the
+      // new engine's resume key. Its history is retained under the old provider.
+      const provider = agent.provider ?? 'claude';
+      if (Object.entries(agent.sessionsByProvider ?? {}).some(([owner, id]) => owner !== provider && id === sessionId)) return;
       agent.sessionId = sessionId;
+      agent.sessionsByProvider = { ...agent.sessionsByProvider, [agent.provider ?? 'claude']: sessionId };
       agent.lastSeen = Date.now();
       this.atomicWriteJson(join(root, 'registry.json'), reg);
       this.appendLog({ kind: 'session', agentId, sessionId });
@@ -1414,6 +1428,7 @@ export class HiveManager {
     const reason = [
       `You have ${fresh.length} new hive message(s) in your inbox. Address them before finishing:`,
       lines,
+      ...fresh.map(m => hiveReplyInstruction({ ...m, requiresReply: m.requires_reply }, join(dir, 'outbox'), agentId === this.registry().godId)).filter(Boolean),
       // Native separators (join, not string-concatenated `/`) so a Windows agent is
       // handed a path its own shell/tools accept, not `C:\…\agents\god/inbox/`.
       `Open the files in ${join(dir, 'inbox')} for full detail, act on each, then move handled ones to ${join(dir, 'inbox', '.done')}. Reply via your outbox if a message requires it.`
@@ -1534,6 +1549,7 @@ export class HiveManager {
       `You are "${meta.name}" (${meta.id}), an autonomous agent in a collaborating hive of Claude agents.`,
       `Your private workspace is ${dir}. The shared hive is ${root}. Full protocol: ${inRoot('PROTOCOL.md')}.`,
       '',
+      'STARTUP IS NOT AN ASSIGNMENT: on launch or restore, read your memory and check your inbox once. If there is no pending assignment, remain idle until the human or your manager gives you work. Do not create or rewrite mood/memory files, send readiness/status messages, start project work or repeat probes merely because the app opened. Mood and memory updates below apply to actual assigned work, not an empty startup.',
       'HIVE PROTOCOL — follow it every task:',
       `1. At the START of a task, read ${inDir('memory.md')} and EVERY file in ${inDir('inbox')} (messages other agents sent you). After handling an inbox message, move its file into ${inDir('inbox', '.done')}.`,
       `1b. JUST DO THE WORK: start on a task as soon as you get it; do NOT post plans or status to the team chat (every chat message wakes and bills other agents). When you hit a problem or need a skill you lack, message the ONE right agent directly (or "god") instead of guessing; never broadcast for help. When a teammate asks you for help and you can give it, answer.`,
@@ -1543,6 +1559,7 @@ export class HiveManager {
       `2. Record durable facts, decisions, and context by appending to ${inDir('memory.md')}.`,
       `3. To ask another agent for something or share information, write ONE message JSON into ${inDir('outbox')} (schema in PROTOCOL.md). NEVER write into another agent's folder — the orchestrator delivers your outbox.`,
       '4. At the END of a task, append what you learned to memory.md so future-you remembers.',
+      '4b. For any inter-agent inbox message with requires_reply=true, write ONE result JSON to your own outbox before finishing: to=the message sender, conversation=the message conversation, in_reply_to=the message id, requires_reply=false, act=done only for verified completion (otherwise inform/refuse with the blocker). A terminal-only answer does not reach an agent requester. Breaker results go to god, not breaker. The orchestrator answers human requests directly in its terminal, never by mailing itself.',
       guardrailsLine,
       memoryLine,
       knowledgeLine,
@@ -1727,6 +1744,8 @@ export class HiveManager {
       id: msg.id,
       from: msg.from,
       to: targetId,
+      conversation: msg.conversation,
+      outboxDir: join(this.agentDir(targetId), 'outbox'),
       act: msg.act,
       subject: msg.subject,
       body: msg.body,
@@ -1865,11 +1884,15 @@ export class HiveManager {
 
   /** Patch one card against the latest on-disk ledger, preserving unrelated
    *  cards and fields (notably webhook.tokenHash and Slack thread metadata). */
-  patchTask(id: string, patch: Partial<Omit<HiveTask, 'id'>>): boolean {
+  patchTask(id: string, patch: Partial<Omit<HiveTask, 'id'>>, expectedHumanQA?: HumanQA[]): boolean {
     const ledger = this.tasks() as { tasks?: HiveTask[] };
     const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
     const index = tasks.findIndex((task) => task?.id === id);
     if (index < 0) return false;
+    // Human answers/dismissals replace a nested history. Refuse a stale history
+    // before merging, so a manager's new ask or another answer cannot be erased.
+    if (expectedHumanQA !== undefined
+      && JSON.stringify(tasks[index].humanQA ?? []) !== JSON.stringify(expectedHumanQA)) return false;
     const next = tasks.slice();
     next[index] = { ...tasks[index], ...patch, id };
     this.writeTasks(next);
@@ -2030,10 +2053,11 @@ export class HiveManager {
       matcher: '*',
       hooks: [{ type: 'command', command: command(event), timeout: 0 }]
     });
-    const plain = (event: string) => ({
-      hooks: [{ type: 'command', command: command(event), timeout: 0 }]
-    });
+    // Non-tool events use flat handlers. A matcher wrapper here makes current
+    // agy reject the entire group, including the session/telemetry bridge.
+    const plain = (event: string) => ({ type: 'command', command: command(event), timeout: 0 });
     const group = {
+      SessionStart: [plain('SessionStart')],
       PreToolUse: [tool('PreToolUse')],
       PostToolUse: [tool('PostToolUse')],
       PreInvocation: [plain('PreInvocation')],
@@ -3117,17 +3141,24 @@ process.stdin.on('end', () => {
   };
   let resp = '';
   const done = () => {
-    // Translate the HookServer's Claude-shaped reply into agy's contract. CRITICAL:
-    // agy treats ANY object written to stdout as a decision and FAIL-CLOSES (an
-    // empty/decision-less object = DENY). So emit JSON ONLY when there's a real
-    // directive (deny/block/steer); otherwise write NOTHING — no output = allow.
+    // Antigravity has event-specific output contracts: Stop continues with
+    // decision=continue; invocation/session context uses injectSteps. Keep an
+    // ordinary pre-tool approval untouched when the server has no directive.
     let out = null;
     try {
       const r = JSON.parse(resp || '{}');
-      if (r.decision === 'block') out = { decision: 'block', reason: r.reason, stopReason: r.reason, systemMessage: r.reason };
-      else if (r.hookSpecificOutput && r.hookSpecificOutput.permissionDecision === 'deny') out = { decision: 'deny', reason: r.hookSpecificOutput.permissionDecisionReason };
-      else if (r.continue === false) out = { decision: 'block', stopReason: r.stopReason };
-      else if (r.hookSpecificOutput && r.hookSpecificOutput.additionalContext) out = { systemMessage: r.hookSpecificOutput.additionalContext };
+      const reason = r.reason || r.stopReason || (r.hookSpecificOutput && r.hookSpecificOutput.permissionDecisionReason);
+      const blocked = r.decision === 'block' || r.continue === false || (r.hookSpecificOutput && r.hookSpecificOutput.permissionDecision === 'deny');
+      const context = r.hookSpecificOutput && r.hookSpecificOutput.additionalContext;
+      if (event === 'Stop' && r.decision === 'block' && r.continue !== false) out = { decision: 'continue', reason };
+      else if (event === 'Stop' && r.continue === false) out = null; // allow the requested halt
+      else if (blocked && event === 'PreToolUse') out = { decision: 'deny', reason };
+      else if (blocked && event === 'PostInvocation') out = { terminationBehavior: 'terminate' };
+      else if (context) {
+        if (event === 'SessionStart') out = { injectSteps: [{ systemMessage: { systemMessage: context } }] };
+        else if (event === 'PreInvocation' || event === 'PostInvocation') out = { injectSteps: [{ ephemeralMessage: context }] };
+        else if (event === 'Stop') out = { decision: 'continue', reason: context };
+      }
     } catch (_) {}
     if (out) { try { process.stdout.write(JSON.stringify(out)); } catch (_) {} }
     process.exit(0);
@@ -3202,15 +3233,23 @@ function post(payload) {
   } catch (e) {}
 }
 export const HiveBridge = async () => {
+  if (!SOCK || !AGENT) return {};
+  // Older OpenCode loads plugin/, newer builds also scan plugins/. Keep both
+  // install paths compatible, but register one set of hooks per agent process.
+  const key = Symbol.for('office-x.hive-bridge.registrations');
+  const registrations = globalThis[key] || (globalThis[key] = new Set());
+  const identity = AGENT + '@' + SOCK;
+  if (registrations.has(identity)) return {};
+  registrations.add(identity);
   return {
     event: async (input) => {
       try { if (input && input.event && input.event.type === 'session.idle') post({ hook_event_name: 'Stop' }); } catch (e) {}
     },
-    'tool.execute.before': async (input) => {
-      try { post({ hook_event_name: 'PreToolUse', tool_name: input && (input.tool || input.name) }); } catch (e) {}
+    'tool.execute.before': async (input, output) => {
+      try { post({ hook_event_name: 'PreToolUse', session_id: input && input.sessionID, tool_name: input && (input.tool || input.name), tool_input: output && output.args !== undefined ? output.args : input && input.args }); } catch (e) {}
     },
     'tool.execute.after': async (input) => {
-      try { post({ hook_event_name: 'PostToolUse', tool_name: input && (input.tool || input.name) }); } catch (e) {}
+      try { post({ hook_event_name: 'PostToolUse', session_id: input && input.sessionID, tool_name: input && (input.tool || input.name), tool_input: input && input.args }); } catch (e) {}
     }
   };
 };

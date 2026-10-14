@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useStore, type ToolKind, type StationKind } from '@/store/store';
 import { createAnsiStripper } from '@/components/ansiText';
+import { nativeTerminalPromptFor, nativeTerminalBusyFor } from '@/components/terminalPool';
 
 // Tool call lines look like: `● Read SPEC.md`, `● Bash npm test`, `● Edit src/foo.ts`
 const TOOL_RE = /●\s+([A-Za-z][A-Za-z_]*)(?:\s+(.+))?/g;
@@ -59,6 +60,10 @@ export function usePtyParser(agentId: string) {
       window.clearTimeout(idleTimerRef.current);
     }
     idleTimerRef.current = window.setTimeout(() => {
+      const agent = useStore.getState().agents.find(a => a.id === agentId);
+      // A quiet approval screen is still waiting for the human. Do not erase
+      // the floor-wide permission status just because no new tool line arrived.
+      if (agent?.ptyId && (nativeTerminalPromptFor(agent.ptyId) || nativeTerminalBusyFor(agent.ptyId))) return;
       // No new tool calls for ~4 s → assume the model went idle
       updateAgent(agentId, {
         status: 'idle',

@@ -24,7 +24,7 @@ const NUDGE_HEAD = 'You have new hive inbox message(s)';
  */
 export function inboxNudgeText(ids: string[]): string {
   const named = ids.length ? ` — at least: ${ids.join(', ')}` : '';
-  return `${NUDGE_HEAD}${named}. Read your inbox, act on what is pending there, and move handled ones to inbox/.done/. Your inbox directory is authoritative: work everything still pending in it, and if a named id is already in inbox/.done/ you handled it on an earlier turn and can ignore that one. Act autonomously; only message god if you genuinely need a decision.`;
+  return `${NUDGE_HEAD}${named}. Read your inbox, act on what is pending there, and move handled ones to inbox/.done/. Your inbox directory is authoritative: work everything still pending in it, and if a named id is already in inbox/.done/ you handled it on an earlier turn and can ignore that one. For a requires_reply=true message, send one result JSON through your own outbox to its sender, copying its conversation and id as in_reply_to; set requires_reply=false. A terminal-only answer is not delivery. Act autonomously; only message god if you genuinely need a decision.`;
 }
 
 /**

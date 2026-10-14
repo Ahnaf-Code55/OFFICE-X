@@ -374,7 +374,8 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         // replacement BEFORE spawning (so startup output has a listener), then
         // bump the key so React remounts only this agent's terminal card.
         disposeTerminal(a.ptyId);
-        acquireTerminal(a.ptyId);
+        // Keep the replacement buffer on the captured native grid before output.
+        acquireTerminal(a.ptyId).term.resize(cols, rows);
         updateAgent(a.id, {
           terminalGeneration: (a.terminalGeneration ?? 0) + 1,
           status: 'idle',

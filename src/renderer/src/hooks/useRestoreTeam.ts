@@ -1,3 +1,4 @@
+import { INITIAL_TERMINAL_SIZE } from '@shared/terminalGeometry';
 import { useEffect, useSyncExternalStore } from 'react';
 import { useStore, type Agent } from '@/store/store';
 import { buildSpawnCommand, inferAgentProvider, tokenizeCommand, type HarnessConfig } from '@/store/config';
@@ -145,8 +146,7 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
             command: exe,
             provider,
             args,
-            cols: 100,
-            rows: 30,
+            ...INITIAL_TERMINAL_SIZE,
             // Worktree (if any) already exists on disk — cd into it, don't create a
             // new one (re-isolating would conflict on the existing path/branch and
             // lose its uncommitted work).
