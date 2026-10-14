@@ -139,6 +139,9 @@
       { "id": "gpt-5.4", "label": "GPT-5.4", "minAppVersion": null, "maxAppVersion": null },
       { "id": "gpt-5", "label": "GPT-5", "minAppVersion": null, "maxAppVersion": null }
     ],
+    "hermes": [
+      { "label": "CLI default (set with `hermes model`)", "minAppVersion": null, "maxAppVersion": null }
+    ],
     "cursor": [
       { "label": "CLI default (auto)", "minAppVersion": null, "maxAppVersion": null },
       { "id": "auto", "label": "Auto", "minAppVersion": null, "maxAppVersion": null },

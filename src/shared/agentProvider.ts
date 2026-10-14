@@ -34,6 +34,7 @@ export type AgentProvider =
   | 'pi'
   | 'copilot'
   | 'cursor'
+  | 'hermes'
   | 'custom';
 
 /** Structured descriptor for how a NON-hiveAware provider gets hive lifecycle
@@ -578,6 +579,30 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
       win32: 'irm https://cursor.com/install?win32=true | iex'
     },
     docsUrl: 'https://cursor.com/docs/cli/install'
+  },
+  {
+    // Hermes Agent (Nous Research). Like Cursor: no hook bridge, so mail is delivered
+    // through the terminal work-order / idle-nudge fallback, and the hive protocol is
+    // typed into the TUI after boot (its `-q` seed is fine for short text, but a long
+    // protocol string is safer typed in).
+    id: 'hermes',
+    label: 'Hermes',
+    defaultCommand: 'hermes',
+    commandGroups: [],
+    // --yolo skips tool-approval prompts. Gated by the floor config.autoMode toggle.
+    autoModeFlag: '--yolo',
+    autoFlag: '--yolo',
+    supportsModel: true,
+    modelFlag: '-m', // the model/provider pair is chosen once with `hermes model`
+    hiveAware: false,
+    canReceiveInbox: true,
+    initialPromptFlag: undefined,
+    seedDelivery: 'type-into-tui',
+    // No recommended model: Hermes uses whatever the user configured with `hermes model`.
+    recommendedOrchestratorModel: undefined,
+    resumeFlag: '--resume',
+    installCommand: undefined,
+    docsUrl: 'https://github.com/NousResearch/hermes-agent'
   },
   {
     id: 'custom',
