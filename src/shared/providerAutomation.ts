@@ -112,6 +112,9 @@ const CONTEXT_COMMANDS: Record<AgentProvider, ProviderContextCommands> = {
   // `/new` is the true fresh-context verb (`/clear` also resets but repaints the screen).
   hermes: { compact: '/compress', clear: '/new', compactTakesFocus: true },
 
+  // Kilo Code CLI: its slash commands are not verified here (no local install), so nothing is typed.
+  kilo: { compact: null, clear: null, compactTakesFocus: false },
+
   // opencode binary's command registry, verbatim:
   //   { title:"Compact session", value:"session.compact",
   //     slash:{ name:"compact", aliases:["summarize"] }, run: … }
