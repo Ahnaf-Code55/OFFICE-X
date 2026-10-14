@@ -1,3 +1,4 @@
+import type { ChatIntent, RoomState, RoomRequest } from '../shared/officeRooms';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { UsageLimits } from '../shared/usageLimits';
 import type { ChatChannel, ChatTier, ChatView } from '../main/chat';
@@ -1289,12 +1290,18 @@ const api = {
     return () => ipcRenderer.removeListener('org:terminalOutput', listener);
   },
   listChat: (): Promise<ChatView[]> => ipcRenderer.invoke('chat:list'),
-  sendChat: (channel: ChatChannel, text: string, image = ''): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('chat:send', { channel, text, image }),
+  sendChat: (channel: ChatChannel, text: string, image = '', intent?: ChatIntent): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('chat:send', { channel, text, image, intent }),
+  canDeliverChat: (agentId: string, requestId: string, channel: ChatChannel): Promise<boolean> => ipcRenderer.invoke('chat:canDeliver',agentId,requestId,channel),
+  getChatRooms: (): Promise<RoomState[]> => ipcRenderer.invoke('chat:rooms'),
+  onChatRooms: (cb: (rooms: RoomState[]) => void): (()=>void) => {
+    const listener=(_e:IpcRendererEvent, rooms:RoomState[])=>cb(rooms); ipcRenderer.on('chat:rooms',listener);
+    return ()=>ipcRenderer.removeListener('chat:rooms',listener);
+  },
   getChatTiers: (): Promise<Record<string, ChatTier>> => ipcRenderer.invoke('chat:getTiers'),
   setChatTier: (agentId: string, tier: ChatTier): Promise<boolean> => ipcRenderer.invoke('chat:setTier', agentId, tier),
-  onChatAgentPrompt: (cb: (value: { agentId: string; text: string }) => void): (() => void) => {
-    const listener = (_e: IpcRendererEvent, value: { agentId: string; text: string }) => cb(value);
+  onChatAgentPrompt: (cb: (value: { agentId: string; text: string; instruction?: string; request?: RoomRequest }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, value: { agentId: string; text: string; instruction?: string; request?: RoomRequest }) => cb(value);
     ipcRenderer.on('chat:agentPrompt', listener);
     return () => ipcRenderer.removeListener('chat:agentPrompt', listener);
   },

@@ -112,11 +112,13 @@ function submitToPty(
   ptyId: string,
   text: string,
   provider: AgentProvider,
-  settleMs = 250
+  settleMs = 250,
+  canSubmit?: () => Promise<boolean>
 ): Promise<void> {
   const prev = writeChains.get(ptyId) ?? Promise.resolve();
   const next = prev.catch(() => { /* a failed prior write must not stall the chain */ }).then(async () => {
     await waitForTerminalReady(ptyId, provider);
+    if (canSubmit && !await canSubmit()) throw new Error('Discussion invitation is no longer current.');
     if (!isTerminalAutomationSafe(ptyId)) throw new Error('Terminal input is waiting for the human.');
     // Bracketed paste (ESC[200~ … ESC[201~) only matters for MULTI-LINE text, so a
     // stray "\n" doesn't submit early (#24). Single-line text (nudges, slash
@@ -136,6 +138,9 @@ function submitToPty(
     if (!wrote?.ok) throw new Error(wrote?.error ?? `pty write failed: ${ptyId}`);
     await new Promise((r) => setTimeout(r, codex ? 400 : 140));
     if (hasTerminalPermissionPrompt(ptyId)) throw new Error('A permission prompt appeared before submit.');
+    // A stopped room must not submit a prompt that was pasted just before stop.
+    // Leave the unsent draft intact: automation never erases terminal input.
+    if (canSubmit && !await canSubmit()) throw new Error('Discussion invitation is no longer current.');
     const submitted = await window.cth.writePty(ptyId, '\r');
     if (!submitted?.ok) throw new Error(submitted?.error ?? `pty write failed: ${ptyId}`);
     await new Promise((r) => setTimeout(r, settleMs));
@@ -826,6 +831,10 @@ export function useHive(config: HarnessConfig | null): void {
         removeQueuedMessage(srcId, next.id);
         return { sent: false };
       }
+      if (next.chatRequest && (Date.now() >= next.chatRequest.expiresAt || !await window.cth.canDeliverChat(srcId, next.chatRequest.id, next.chatRequest.channel))) {
+        removeQueuedMessage(srcId, next.id);
+        return {sent:false};
+      }
       const flightKey = `${srcId}:${next.id}`;
       if (inFlight.has(flightKey)) return { sent: false };
       inFlight.add(flightKey);
@@ -840,7 +849,10 @@ export function useHive(config: HarnessConfig | null): void {
               target,
               wrap ? wrap(next) : (next.instruction ?? next.text)
             ),
-            inferAgentProvider(target.command, target.provider)
+            inferAgentProvider(target.command, target.provider),
+            250,
+            next.chatRequest ? async () => Date.now() < next.chatRequest!.expiresAt
+              && await window.cth.canDeliverChat(srcId, next.chatRequest!.id, next.chatRequest!.channel) : undefined
           ),
           () => {
             removeQueuedMessage(srcId, next.id);

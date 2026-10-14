@@ -15,6 +15,7 @@ Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring 
 - Turjo (@TRahman2414): agent response/startup fixes and right agent workspace; floor/scene files belong to Ahnaf. Details: [agent workspace handoff](docs/AGENT-WORKSPACE.md).
 
 ## Implemented
+- 2026-10-14 `trahman/office-discussion-rooms`: team chat/meeting membership and quiet, bounded discussion routing claimed by Turjo. Scope and steps: [office discussions](docs/OFFICE-DISCUSSIONS.md). Floor/scene files remain outside this work.
 - 2026-10-13 local `trahman/block-communication-graph`: approved block hierarchy, live roster status, separate directed message routes and redacted previews. See [Graph handoff](docs/BLOCK-GRAPH.md). Depends on the pending Teams branch; floor and scene files remain unchanged.
 - 2026-10-13 local feature branch `trahman/agent-team-dock`: hierarchical Teams drawer for both sides, durable worker labels/assignments, OpenCode goal delivery and stale development roster-write protection. See [agent teams handoff](docs/AGENT-TEAMS.md) for scope, validation and next step. Personal hires are local; floor/scene files are unchanged.
 - Virtual office from Munder Difflin, OQVIAN roles and working modes, plus Shared Office with reciprocal invites, pinned fingerprints, encrypted libp2p messages, separate teammate sections, and revocable access.

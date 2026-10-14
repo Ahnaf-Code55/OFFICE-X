@@ -1599,11 +1599,11 @@ export class HiveManager {
   }
 
   /** Group chat sink: an agent reply addressed `to: "chat"` goes to the room, not an inbox. */
-  onChat?: (fromAgentId: string, body: string) => void;
+  onChat?: (fromAgentId: string, body: string, conversation: string) => void;
 
   private routeMessage(msg: HiveMessage): void {
     if (msg.to === 'chat') {
-      this.onChat?.(msg.from, msg.body);
+      this.onChat?.(msg.from, msg.body, msg.conversation);
       return;
     }
     if (msg.hops > HOP_CAP) {

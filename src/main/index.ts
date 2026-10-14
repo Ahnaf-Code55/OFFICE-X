@@ -1,3 +1,4 @@
+import { roleTier, namedRole, type ChatIntent } from '../shared/officeRooms';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { codexLimits, type UsageLimits } from '../shared/usageLimits';
 import { fetchOpenCodeGoLimits } from './openCodeUsage';
@@ -4617,9 +4618,9 @@ function dispatchTeamMessage(message: TeamMessage, peerId: string): void {
         if (!win.isDestroyed()) win.webContents.send('org:terminalOutput', payload);
       }
     },
-    receiveChat: (command) => chat.receiveRemote({ memberName: member.displayName,
+    receiveChat: (command) => chat.receiveRemote({ memberId: member.memberId, memberName: member.displayName,
       canPromptAgents: isPeerActionAllowed(member.controlLevel, 'agent-prompt'), channel: command.channel, text: command.text, image: command.image,
-      authorKind: command.authorKind, authorName: command.authorName }),
+      authorKind: command.authorKind, authorName: command.authorName, requestId: command.requestId, intent: command.intent }),
     // Call setup is relayed straight to the meeting room; the renderer decides
     // whether to ring, and media then flows peer to peer, never through here.
     receiveRtcSignal: (signal) => {
@@ -4866,7 +4867,7 @@ async function sendLocalTeamPresence(): Promise<void> {
   const name = cfg.displayName.trim().slice(0, 32) || 'OFFICE-X teammate';
   let snapshot: TeamPresencePeer[];
   try {
-    snapshot = parseTeamPresence([{ id: identity.identity.deviceId, name, agents: localTeamPresenceAgents }]);
+    snapshot = parseTeamPresence([{ id: identity.identity.deviceId, name, agents: localTeamPresenceAgents.map(a=>({...a,chatTier:chat.tiers()[a.id] ?? chatRole(a.id).tier})) }]);
   } catch { return; }
   const peers = persist.listTrustedTeamMembers(cfg.officeId);
   await Promise.allSettled(peers.map(async (member) => {
@@ -5105,6 +5106,13 @@ ipcMain.handle('org:transportStatus', () => {
     error: teamTransportError || undefined
   };
 });
+function chatRole(id: string): { tier: ChatTier; work: string } {
+  const entry = roster.read()?.agents.find(raw => raw && typeof raw === 'object' && (raw as {id?: unknown}).id === id) as {organization?: {role?: unknown; tags?: unknown[]}; description?: string} | undefined;
+  const reg = hive.registry();
+  const agent = reg.agents[id];
+  return {tier: roleTier(entry?.organization?.role ?? namedRole(agent?.name ?? ''), id === reg.godId),
+    work: (Array.isArray(entry?.organization?.tags) ? entry.organization.tags.filter(t=>typeof t === 'string').join(', ') : '') || agent?.role || entry?.description || 'Assigned office role'};
+}
 const chat = createChat({
   dir: join(app.getPath('userData'), 'chat'),
   getKv: (key) => persist.getKv(key),
@@ -5116,26 +5124,33 @@ const chat = createChat({
   },
   agentIds: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived && !a.isAssistant).map(([id]) => id),
   leadAgentId: () => hive.registry().godId ?? undefined,
+  agentTier: id => chatRole(id).tier,
+  agentWork: id => chatRole(id).work,
   // Same path as Slack: the renderer queues the prompt and types it once the agent is idle.
-  deliverToAgent: (agentId, _subject, body) => {
-    for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:agentPrompt', { agentId, text: body });
+  deliverToAgent: (agentId, subject, body, request) => {
+    for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:agentPrompt', { agentId, text: subject, instruction: body, request });
   },
   sendToTeammates: async (body) => {
     const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
     if (!cfg.enabled || !cfg.officeId || !persist.isOpen) return;
     const members = persist.listTrustedTeamMembers(cfg.officeId);
-    const results = await Promise.allSettled(members.map((m) => sendTeamMessage(m.memberId, 'chat', body)));
+    const results = await Promise.allSettled(members.map((m) => sendTeamMessage(m.memberId, 'chat', { ...body })));
     const failed = members.filter((_, i) => results[i].status === 'rejected').map((m) => m.displayName);
     if (failed.length) throw new Error(`not delivered to ${failed.join(', ')}`);
   },
   emit: (message) => {
     for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:message', message);
-  }
+  },
+  emitRooms: rooms => { for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:rooms', rooms); }
 });
-hive.onChat = (agentId, body) => chat.receiveAgent(agentId, body);
+hive.onChat = (agentId, body, conversation) => chat.receiveAgent(agentId, body, conversation);
 const isAppWindow = (event: Electron.IpcMainInvokeEvent): boolean =>
   [...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id);
 ipcMain.handle('chat:list', (event) => (isAppWindow(event) ? chat.list() : []));
+ipcMain.handle('chat:canDeliver', (event, agentId: unknown, requestId: unknown, channel: unknown) =>
+  isAppWindow(event) && typeof agentId === 'string' && typeof requestId === 'string' && CHAT_CHANNELS.includes(channel as ChatChannel)
+    ? chat.canDeliver(agentId, requestId, channel as ChatChannel) : false);
+ipcMain.handle('chat:rooms', event => isAppWindow(event) ? chat.rooms() : []);
 ipcMain.handle('chat:getTiers', (event) => (isAppWindow(event) ? chat.tiers() : {}));
 ipcMain.handle('chat:setTier', (event, agentId: unknown, tier: unknown) => {
   if (!isAppWindow(event) || typeof agentId !== 'string'
@@ -5149,12 +5164,14 @@ ipcMain.handle('chat:send', async (event, raw: unknown) => {
   const text = typeof value.text === 'string' ? value.text.trim() : '';
   const image = typeof value.image === 'string' ? value.image : '';
   const channel = value.channel as ChatChannel;
+  const intent = value.intent as ChatIntent | undefined;
+  if (intent !== undefined && !['report', 'start', 'stop', 'continue'].includes(intent)) return {ok:false,error:'invalid room action'};
   if (!CHAT_CHANNELS.includes(channel) || text.length > MAX_CHAT_TEXT || image.length > MAX_CHAT_IMAGE_CHARS || (!text && !image)
     || (image && !/^data:image\/(png|jpeg|webp);base64,/.test(image))) {
     return { ok: false, error: 'message is empty or too large' };
   }
   try {
-    await chat.post(channel, text, image);
+    await chat.post(channel, text, image, intent);
     return { ok: true };
   } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
 });
