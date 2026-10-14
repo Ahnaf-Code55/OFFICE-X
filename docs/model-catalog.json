@@ -153,6 +153,9 @@
       { "id": "gpt-5.4", "label": "GPT-5.4", "minAppVersion": null, "maxAppVersion": null },
       { "id": "gpt-5", "label": "GPT-5", "minAppVersion": null, "maxAppVersion": null }
     ],
+    "hermes": [
+      { "label": "CLI default (set with `hermes model`)", "minAppVersion": null, "maxAppVersion": null }
+    ],
     "kilo": [
       { "label": "CLI default", "minAppVersion": null, "maxAppVersion": null },
       { "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", "label": "OpenRouter free · nemotron-3-ultra-550b-a55b", "minAppVersion": null, "maxAppVersion": null },

@@ -209,7 +209,7 @@ export interface HarnessConfig {
    *  are those that can receive inbox (claude/codex/antigravity/qwen). */
   godProvider?: AgentProvider;
   /** The model GOD runs on. Unset falls back to the provider preset's
-   *  `recommendedOrchestratorModel`, then MODEL_GOD. Default 'claude-opus-4-8'. */
+   *  `recommendedOrchestratorModel`, then MODEL_GOD. Default 'claude-opus-5-5'. */
   godModel?: string;
   /** Per-server consent state for the default MCP bundle, keyed by catalog id.
    *  Seeded from MCP_CATALOG (safe-readonly ON, write/secret OFF); the user flips
@@ -435,7 +435,7 @@ const DEFAULTS: HarnessConfig = {
   orchestratorMaySpawn: false,
   defaultCommand: 'claude',
   godProvider: 'claude',
-  godModel: 'claude-opus-4-8',
+  godModel: 'claude-opus-5-5',
   // Global default model for every agent that hasn't picked one explicitly — wins
   // over the role-based tiers (modelForRole) in the spawn handler, so all agents
   // (incl. god) default to Fable 5. A per-agent model choice still overrides it.
@@ -760,9 +760,13 @@ export function resetConfig(): HarnessConfig {
 /** Model ids by tier (Lane A #6.4). Kept in sync with the claude list in
  *  src/shared/modelCatalog.json, which `agentModels()` in
  *  src/renderer/src/store/config.ts reads. */
-const MODEL_GOD = 'claude-opus-4-8';                  // orchestration — highest capability
-const MODEL_WORKER = 'claude-sonnet-4-6';             // general execution
-const MODEL_HELPER = 'claude-haiku-4-5-20251001';     // narrow, cheap helpers
+const MODEL_GOD = 'claude-opus-5-5';                  // orchestration — highest capability
+/** Everyone who is not the orchestrator runs the cheap model of their provider
+ *  (Haiku 5.5 on Claude, GPT 6 Luna on Codex); other providers keep the CLI default. */
+const WORKER_MODEL_BY_PROVIDER: Record<string, string> = {
+  claude: 'claude-haiku-5-5',
+  codex: 'gpt-6-luna'
+};
 
 /** Minimal structural shape for tiering — a subset of AgentMeta so config.ts
  *  stays free of a hive.ts import. */
@@ -779,7 +783,8 @@ export interface RoleHint {
  *  explicit per-agent model selection always wins. */
 export function modelForRole(
   meta: RoleHint,
-  config?: Pick<HarnessConfig, 'godProvider' | 'godModel'>
+  config?: Pick<HarnessConfig, 'godProvider' | 'godModel'>,
+  provider: string = 'claude'
 ): string | undefined {
   if (meta.isGod) {
     // GOD engine is selectable: an explicit godModel wins, else the chosen
@@ -787,9 +792,7 @@ export function modelForRole(
     const preset = providerPreset(config?.godProvider ?? 'claude');
     return config?.godModel ?? preset.recommendedOrchestratorModel ?? MODEL_GOD;
   }
-  const hay = `${meta.role ?? ''} ${(meta.capabilities ?? []).join(' ')}`.toLowerCase();
-  if (/\b(triage|rout|verif|lint|format|summar|classif|label)/.test(hay)) return MODEL_HELPER;
-  return MODEL_WORKER;
+  return WORKER_MODEL_BY_PROVIDER[provider];
 }
 
 /** Ensure harnessHome exists on disk. Expands `~` first — the onboarding wizard

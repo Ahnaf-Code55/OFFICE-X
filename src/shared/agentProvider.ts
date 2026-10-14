@@ -34,6 +34,7 @@ export type AgentProvider =
   | 'pi'
   | 'copilot'
   | 'cursor'
+  | 'hermes'
   | 'kilo'
   | 'custom';
 
@@ -195,7 +196,7 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     canReceiveInbox: true,
     // Longest-context Claude variant — matches the "give Michael a bigger model"
     // advisory and the Recommended tag on the orchestrator picker.
-    recommendedOrchestratorModel: 'claude-opus-4-8[1m]',
+    recommendedOrchestratorModel: 'claude-opus-5-5',
     resumeFlag: '--resume',
     // Official Claude Code install (npm global). Used by the missing-CLI auto-install.
     installCommand: 'npm install -g @anthropic-ai/claude-code',
@@ -248,9 +249,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     canReceiveInbox: true,
     initialPromptFlag: undefined,
     positionalInitialPrompt: true,
-    // Codex's long-context coding model for the orchestrator role. // TODO-verify
-    // the exact codex CLI model id (couldn't install the codex CLI to confirm).
-    recommendedOrchestratorModel: 'gpt-5-codex',
+    // Orchestrator role on Codex: GPT 6.1 Sol (needs Codex CLI >= 0.162).
+    recommendedOrchestratorModel: 'gpt-6.1-sol',
     // Codex resumes via a SUBCOMMAND, not a flag: `codex resume [OPTIONS]
     // [SESSION_ID]`. A `--resume <id>` flag does not exist, which is why restarts
     // used to silently start a brand-new session instead of continuing.
@@ -580,6 +580,30 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
       win32: 'irm https://cursor.com/install?win32=true | iex'
     },
     docsUrl: 'https://cursor.com/docs/cli/install'
+  },
+  {
+    // Hermes Agent (Nous Research). Like Cursor: no hook bridge, so mail is delivered
+    // through the terminal work-order / idle-nudge fallback, and the hive protocol is
+    // typed into the TUI after boot (its `-q` seed is fine for short text, but a long
+    // protocol string is safer typed in).
+    id: 'hermes',
+    label: 'Hermes',
+    defaultCommand: 'hermes',
+    commandGroups: [],
+    // --yolo skips tool-approval prompts. Gated by the floor config.autoMode toggle.
+    autoModeFlag: '--yolo',
+    autoFlag: '--yolo',
+    supportsModel: true,
+    modelFlag: '-m', // the model/provider pair is chosen once with `hermes model`
+    hiveAware: false,
+    canReceiveInbox: true,
+    initialPromptFlag: undefined,
+    seedDelivery: 'type-into-tui',
+    // No recommended model: Hermes uses whatever the user configured with `hermes model`.
+    recommendedOrchestratorModel: undefined,
+    resumeFlag: '--resume',
+    installCommand: undefined,
+    docsUrl: 'https://github.com/NousResearch/hermes-agent'
   },
   {
     // Kilo Code CLI (@kilocode/cli): an OpenCode-style terminal agent with 500+ models,
