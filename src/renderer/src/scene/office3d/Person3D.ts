@@ -3,10 +3,18 @@ import type { PersonLook } from '../office/portraitArt';
 
 type RGB = [number, number, number];
 
+/** Every pose a person can strike. The first five are the original office basics;
+ *  the rest are cartoon quirks (quirks that only use arms/head/torso also read well seated). */
+export type Pose3D =
+  | 'idle' | 'walk' | 'type' | 'read' | 'sit'
+  | 'pickNose' | 'crazy' | 'angry' | 'askApproval' | 'punch' | 'kick' | 'carryBox' | 'carryPaper';
+
 interface RigPose {
   hipY: number; bodyY: number; bodyScaleY: number; bodyScaleXZ: number; headX: number; headYaw: number;
   armLX: number; armRX: number; elbowLX: number; elbowRX: number;
   legLX: number; legRX: number; kneeLX: number; kneeRX: number;
+  /** Torso pitch (lean forward/back), torso twist, head tilt sideways, lateral body shake. */
+  bodyLean: number; bodyYaw: number; headRoll: number; shakeX: number;
 }
 
 const DIRECTIONS: Record<'down' | 'up' | 'left' | 'right', number> = {
@@ -17,6 +25,7 @@ const BASE: RigPose = {
   hipY: 0.76, bodyY: 0, bodyScaleY: 1, bodyScaleXZ: 1, headX: 0, headYaw: 0,
   armLX: 0, armRX: 0, elbowLX: 0, elbowRX: 0,
   legLX: 0, legRX: 0, kneeLX: 0, kneeRX: 0,
+  bodyLean: 0, bodyYaw: 0, headRoll: 0, shakeX: 0,
 };
 
 /** A compact, procedural office character. One world unit equals one 16 px tile. */
@@ -37,7 +46,10 @@ export class Person3D {
   private readonly legR = new THREE.Group();
   private readonly kneeL = new THREE.Group();
   private readonly kneeR = new THREE.Group();
-  private pose: 'idle' | 'walk' | 'type' | 'read' | 'sit' = 'idle';
+  private pose: Pose3D = 'idle';
+  /** Lazily built prop groups, shown only while their carry pose is active. */
+  private propBoxes: THREE.Group | null = null;
+  private propPaper: THREE.Group | null = null;
   private elapsed = 0;
   /** Reused every frame as the rig target so update() never allocates. */
   private readonly rigTarget: RigPose = { ...BASE };
@@ -51,7 +63,7 @@ export class Person3D {
     this.applyRig(BASE, 0, true);
   }
 
-  setPose(pose: 'idle' | 'walk' | 'type' | 'read' | 'sit', dir: 'down' | 'up' | 'left' | 'right'): void {
+  setPose(pose: Pose3D, dir: 'down' | 'up' | 'left' | 'right'): void {
     this.pose = pose;
     this.group.userData.targetRotationY = DIRECTIONS[dir];
   }
@@ -64,6 +76,12 @@ export class Person3D {
     let turn = targetRotation - this.group.rotation.y;
     turn = Math.atan2(Math.sin(turn), Math.cos(turn));
     this.group.rotation.y += turn * turnBlend;
+
+    // Carry props: built once on first use, then only a visibility flag flips.
+    if (this.pose === 'carryBox' && !this.propBoxes) this.propBoxes = this.buildPropBoxes();
+    if (this.pose === 'carryPaper' && !this.propPaper) this.propPaper = this.buildPropPaper();
+    if (this.propBoxes) this.propBoxes.visible = this.pose === 'carryBox';
+    if (this.propPaper) this.propPaper.visible = this.pose === 'carryPaper';
 
     // Reuse the rig target object; Object.assign copies without allocating.
     const p = Object.assign(this.rigTarget, BASE);
@@ -100,6 +118,120 @@ export class Person3D {
       p.armRX = -0.9; p.elbowRX = -2.3;
       p.armLX = -0.25; p.elbowLX = -0.5;
       p.bodyScaleY = 1 + breath * 0.006;
+    } else if (this.pose === 'pickNose') {
+      // Forearm up to the face, finger drilling away with a little head tilt,
+      // plus the occasional shifty glance to check nobody is watching. Arm/head only,
+      // so it works just as well seated.
+      const glance = Math.max(0, Math.sin(t * 0.23));
+      p.armRX = -1.08;
+      p.elbowRX = -2.42 + Math.sin(t * 6.8) * 0.11;
+      p.armLX = -0.12; p.elbowLX = -0.3;
+      p.headX = 0.16; p.headRoll = 0.14;
+      p.headYaw = Math.sin(t * 0.9) * 0.5 * glance;
+      p.bodyLean = 0.05;
+      p.bodyScaleY = 1 + breath * 0.008;
+    } else if (this.pose === 'crazy') {
+      // Full meltdown (standing only): windmilling arms overhead, rattling head,
+      // hopping with cartoon squash & stretch, and a wobbling almost-spin.
+      const c = this.elapsed * 12;
+      const hop = Math.abs(Math.sin(c * 0.5));
+      p.armLX = -2.45 + Math.sin(c) * 0.55;
+      p.armRX = -2.45 + Math.sin(c + 2.4) * 0.55;
+      p.elbowLX = -0.55 + Math.sin(c * 1.7 + 1.0) * 0.6;
+      p.elbowRX = -0.55 + Math.sin(c * 1.7 + 3.6) * 0.6;
+      p.headYaw = Math.sin(c * 0.9) * 0.42;
+      p.headRoll = Math.sin(c * 0.7 + 2.0) * 0.2;
+      p.bodyY = hop * 0.1;
+      p.bodyScaleY = 1 + Math.sin(c * 0.5) * 0.05;
+      p.bodyScaleXZ = 1 - Math.sin(c * 0.5) * 0.025;
+      p.bodyYaw = Math.sin(c * 0.33) * 0.55;
+      p.shakeX = Math.sin(c * 1.3) * 0.03;
+      p.legLX = Math.sin(c * 0.5) * 0.45; p.legRX = -p.legLX;
+      p.kneeLX = p.kneeRX = (1 - hop) * 0.55;
+    } else if (this.pose === 'angry') {
+      // Seething: fists bunched at the chest, leaning in, head down glaring,
+      // trembling with fury and stomping one foot. Upper-body led, fine when seated.
+      const stomp = Math.max(0, Math.sin(t * 4.2));
+      p.armLX = -0.32; p.armRX = -0.32;
+      p.elbowLX = -2.0; p.elbowRX = -2.0;
+      p.bodyLean = 0.24;
+      p.headX = 0.3;
+      p.headYaw = wander * 0.2;
+      p.shakeX = Math.sin(t * 26) * 0.028;
+      p.bodyY = 0.015 - stomp * 0.03;
+      p.legRX = -stomp * 0.55; p.kneeRX = stomp * 1.05;
+      p.bodyScaleY = 1 + breath * 0.006;
+    } else if (this.pose === 'askApproval') {
+      // Polite plea: slight bow, hands clasped in front, nervous nodding, and every
+      // so often one hand sneaks up like a kid in class. Arm/head/torso only.
+      const nod = Math.sin(t * 3.4);
+      const raise = Math.pow(Math.max(0, Math.sin(t * 0.85)), 6);
+      p.bodyLean = 0.2 + Math.max(0, nod) * 0.05;
+      p.headX = 0.18 + nod * 0.08;
+      p.headYaw = wander * 0.25 + raise * 0.18;
+      p.armLX = -0.62; p.elbowLX = -1.35;
+      p.armRX = -0.62 - raise * 1.15; p.elbowRX = -1.35 - raise * 0.35;
+      p.bodyScaleY = 1 + breath * 0.007;
+    } else if (this.pose === 'punch') {
+      // Boxer (standing only): guard up, bouncing on the toes, twisting into
+      // fast alternating jabs while the head stays on the target.
+      const b = this.elapsed * 9.5;
+      const jab = Math.sin(b);
+      const jabL = Math.max(0, -jab);
+      const jabR = Math.max(0, jab);
+      const bounce = Math.abs(Math.sin(b * 0.5));
+      p.armLX = -1.35 - jabL * 0.3; p.armRX = -1.35 - jabR * 0.3;
+      p.elbowLX = -2.0 + jabL * 1.5; p.elbowRX = -2.0 + jabR * 1.5;
+      p.bodyYaw = jab * 0.3;
+      p.headYaw = -jab * 0.2; p.headX = 0.14;
+      p.bodyY = bounce * 0.045;
+      p.kneeLX = p.kneeRX = (1 - bounce) * 0.22;
+      p.legLX = -jab * 0.08; p.legRX = jab * 0.08;
+    } else if (this.pose === 'kick') {
+      // Kickboxer (standing only): alternating high kicks — chamber the knee, snap it
+      // straight — support leg dips, arms swing for balance, torso leans back.
+      const s = Math.sin(this.elapsed * 6.5);
+      const liftR = Math.max(0, s);
+      const liftL = Math.max(0, -s);
+      p.legRX = -liftR * 1.5;
+      p.legLX = -liftL * 1.5;
+      p.kneeRX = liftR * 3.1 * (1 - liftR) + liftL * 0.28;
+      p.kneeLX = liftL * 3.1 * (1 - liftL) + liftR * 0.28;
+      p.armLX = -0.85 + s * 0.35; p.armRX = -0.85 - s * 0.35;
+      p.elbowLX = -0.7; p.elbowRX = -0.7;
+      p.bodyLean = -0.16 - Math.abs(s) * 0.1;
+      p.bodyYaw = s * 0.32;
+      p.bodyY = Math.abs(s) * 0.02;
+      p.headX = 0.06; p.headYaw = -s * 0.12;
+    } else if (this.pose === 'carryBox') {
+      // Careful steps under a tall wobbling stack of boxes: both arms forward
+      // holding it, leaning back, head peeking sideways around the pile.
+      const swing = Math.sin(phase) * 0.5;
+      p.legLX = swing; p.legRX = -swing;
+      p.kneeLX = Math.max(0, -swing) * 0.4;
+      p.kneeRX = Math.max(0, swing) * 0.4;
+      p.armLX = -0.98; p.armRX = -0.98;
+      p.elbowLX = -0.7; p.elbowRX = -0.7;
+      p.bodyLean = -0.13;
+      p.bodyY = Math.abs(Math.sin(phase)) * 0.03;
+      p.bodyYaw = Math.sin(phase) * 0.045;
+      p.headYaw = 0.45 + Math.sin(t * 1.1) * 0.12;
+      p.headX = 0.05; p.headRoll = -0.07;
+    } else if (this.pose === 'carryPaper') {
+      // Walking with a paper stack cradled in one arm, the other swinging free,
+      // with a happy little sway.
+      const swing = Math.sin(phase) * 0.58;
+      p.legLX = swing; p.legRX = -swing;
+      p.kneeLX = Math.max(0, -swing) * 0.42;
+      p.kneeRX = Math.max(0, swing) * 0.42;
+      p.armLX = -swing * 0.72; p.elbowLX = -0.3;
+      p.armRX = -0.55; p.elbowRX = -1.45;
+      p.bodyLean = 0.04;
+      p.bodyY = Math.abs(Math.sin(phase)) * 0.035;
+      p.bodyYaw = Math.sin(phase) * 0.07;
+      p.headRoll = Math.sin(t * 1.2) * 0.05;
+      p.headYaw = wander * 0.5;
+      p.headX = Math.sin(phase) * 0.02;
     } else {
       p.hipY = 0.88; p.legLX = p.legRX = -1.18;
       p.kneeLX = p.kneeRX = 1.18; p.armLX = p.armRX = -0.18;
@@ -349,17 +481,64 @@ export class Person3D {
     }
   }
 
+  /** Tall stack of 4 slightly different cardboard boxes, held in front of the chest. */
+  private buildPropBoxes(): THREE.Group {
+    const g = new THREE.Group();
+    g.name = 'Person3DPropBoxes';
+    const cardboard = this.material([178, 136, 94], 0.92);
+    const tape = this.material([222, 200, 162], 0.85);
+    const sizes: Array<[number, number, number]> = [
+      [0.3, 0.2, 0.26], [0.27, 0.18, 0.24], [0.29, 0.17, 0.25], [0.25, 0.16, 0.22],
+    ];
+    let y = 0;
+    for (let i = 0; i < sizes.length; i++) {
+      const [w, h, d] = sizes[i];
+      const box = this.mesh(this.geometry(`propBox${i}`, () => new THREE.BoxGeometry(w, h, d)),
+        cardboard, g, [(i % 2 === 0 ? 1 : -1) * 0.012, y + h / 2, 0]);
+      box.rotation.y = (i % 2 === 0 ? 1 : -1) * 0.06;
+      y += h;
+    }
+    // tape band around the top box
+    const band = this.mesh(this.geometry('propBoxTape', () => new THREE.BoxGeometry(0.06, 0.17, 0.23)),
+      tape, g, [-0.012, y - 0.08, 0]);
+    band.rotation.y = -0.06;
+    g.position.set(0, 0.04, 0.3);
+    g.visible = false;
+    this.torso.add(g);
+    return g;
+  }
+
+  /** Thin stack of white paper sheets, cradled against the right side of the chest. */
+  private buildPropPaper(): THREE.Group {
+    const g = new THREE.Group();
+    g.name = 'Person3DPropPaper';
+    const paper = this.material([250, 248, 240], 0.55);
+    const sheet = this.geometry('propPaperSheet', () => new THREE.BoxGeometry(0.26, 0.085, 0.34));
+    this.mesh(sheet, paper, g, [0, 0.043, 0]);
+    const loose = this.mesh(sheet, paper, g, [0.015, 0.1, 0.01]);
+    loose.rotation.y = 0.16; loose.rotation.z = 0.05;
+    g.position.set(0.25, -0.02, 0.14);
+    g.rotation.z = -0.08;
+    g.visible = false;
+    this.torso.add(g);
+    return g;
+  }
+
   private applyRig(p: RigPose, dt: number, snap = false): void {
     // Damped interpolation (exponential) so pose changes glide instead of snapping;
     // the head eases slower than the body for a natural settle.
     const aBody = snap ? 1 : 1 - Math.exp(-8 * dt);
     const aHead = snap ? 1 : 1 - Math.exp(-4 * dt);
     this.body.position.y = THREE.MathUtils.lerp(this.body.position.y, p.hipY + p.bodyY, aBody);
+    this.body.position.x = THREE.MathUtils.lerp(this.body.position.x, p.shakeX, aBody);
     this.torso.scale.y = THREE.MathUtils.lerp(this.torso.scale.y, p.bodyScaleY, aBody);
     this.torso.scale.x = THREE.MathUtils.lerp(this.torso.scale.x, p.bodyScaleXZ, aBody);
     this.torso.scale.z = THREE.MathUtils.lerp(this.torso.scale.z, p.bodyScaleXZ, aBody);
+    this.torso.rotation.x = THREE.MathUtils.lerp(this.torso.rotation.x, p.bodyLean, aBody);
+    this.torso.rotation.y = THREE.MathUtils.lerp(this.torso.rotation.y, p.bodyYaw, aBody);
     this.head.rotation.x = THREE.MathUtils.lerp(this.head.rotation.x, p.headX, aHead);
     this.head.rotation.y = THREE.MathUtils.lerp(this.head.rotation.y, p.headYaw, aHead);
+    this.head.rotation.z = THREE.MathUtils.lerp(this.head.rotation.z, p.headRoll, aHead);
     this.armL.rotation.x = THREE.MathUtils.lerp(this.armL.rotation.x, p.armLX, aBody);
     this.armR.rotation.x = THREE.MathUtils.lerp(this.armR.rotation.x, p.armRX, aBody);
     this.elbowL.rotation.x = THREE.MathUtils.lerp(this.elbowL.rotation.x, p.elbowLX, aBody);

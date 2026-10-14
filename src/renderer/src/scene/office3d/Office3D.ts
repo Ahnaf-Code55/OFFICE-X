@@ -7,7 +7,8 @@ import type { Texture } from 'pixi.js';
 import type { TiledMap } from '../office/TiledMapRenderer';
 import type { OfficeCharacterName } from '../office/cast';
 import { personLook } from '../office/portraitArt';
-import { Person3D } from './Person3D';
+import { Person3D, type Pose3D } from './Person3D';
+import { Behavior3D } from './Behavior3D';
 import { NameTag3D } from './NameTag3D';
 import { ThoughtBubble3D } from './ThoughtBubble3D';
 import { planFurniture, type FurnitureItem } from './FurniturePlanner';
@@ -32,6 +33,8 @@ export interface Person3DState {
   remote?: boolean;          // a Shared Office teammate's agent: drawn, but not selectable
   thought?: { text: string; tool?: string; visible: boolean };
   glyph?: 'none' | 'blocked' | 'success' | 'compacting' | 'looping';
+  status?: string;           // agent status; 'waiting' makes the person ask for approval
+  carrying?: string;         // tool the agent is hauling; shown as boxes or paper while walking
 }
 
 /** Draw one Tiled tile layer into a canvas (gid flip flags honoured). */
@@ -128,6 +131,7 @@ export class Office3D {
   private mapH = 0;
   private home = { pos: new THREE.Vector3(), target: new THREE.Vector3() };
   private fly: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  private behavior = new Behavior3D();
   private frameGap = 1 / 32;
   private sinceRender = 0;
   private renders = 0;
@@ -409,6 +413,9 @@ export class Office3D {
   /** Called every simulation tick with the current state of everyone on the floor. */
   frame(list: Person3DState[], dt: number): void {
     const seen = new Set<string>();
+    const acts = this.behavior.update(dt, list.filter((q) => q.visible).map((q) => ({
+      id: q.id, x: q.x / 16, y: q.y / 16, anim: q.anim, sitting: q.sitting, status: q.status, carrying: q.carrying,
+    })));
     for (const s of list) {
       seen.add(s.id);
       let e = this.people.get(s.id);
@@ -431,7 +438,9 @@ export class Office3D {
       if (s.visible && s.thought?.visible) e.bubble.show(s.thought.text, s.thought.tool, s.glyph); else e.bubble.hide();
       e.bubble.update(dt);
       e.p.group.position.set(s.x / 16, 0, s.y / 16);
-      e.p.setPose(s.sitting && s.anim === 'idle' ? 'sit' : s.sitting && s.anim === 'walk' ? 'sit' : s.anim, s.dir);
+      const b = acts.get(s.id);
+      const base: Pose3D = s.sitting && (s.anim === 'idle' || s.anim === 'walk') ? 'sit' : s.anim;
+      e.p.setPose(b && !(s.sitting && (b.pose === 'carryBox' || b.pose === 'carryPaper')) ? b.pose : base, b?.dir ?? s.dir);
       e.p.update(dt);
     }
     for (const [id, e] of this.people) {
