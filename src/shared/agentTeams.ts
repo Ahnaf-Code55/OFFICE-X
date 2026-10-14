@@ -82,15 +82,21 @@ export function buildTeamMembers(agents: readonly LocalTeamAgent[], peers: TeamP
     members.push(member);
     pending.push({ member, parents: org?.reportsTo ?? chart?.parents ?? [], cohort: 'local', explicit: !!org });
   }
-  for (const peer of peers) for (const a of peer.agents) {
-    const chart = chartFor(a.name);
-    const member: TeamMember = {
-      key: `remote:${peer.id}:${a.id}`, name: a.name, side: chart?.side ?? 'unassigned',
-      role: chart?.role ?? 'worker', title: chart?.title ?? 'Role not shared', tags: [], parentKeys: [],
-      status: a.status, source: 'remote', peer: peer.name, character: a.character
-    };
-    members.push(member);
-    pending.push({ member, parents: chart?.parents ?? [], cohort: `remote:${peer.id}`, explicit: false });
+  for (const peer of peers) {
+    const knownSides = new Set(peer.agents.flatMap(a => chartFor(a.name) ? [chartFor(a.name)!.side] : []));
+    const peerSide = knownSides.size === 1 ? [...knownSides][0] : 'unassigned';
+    for (const a of peer.agents) {
+      const chart = chartFor(a.name);
+      const tier = (a as { chatTier?: string }).chatTier;
+      const sharedRole = tier === 'leadership' ? 'orchestrator' : tier === 'middle' ? 'manager' : tier === 'staff' ? 'worker' : undefined;
+      const member: TeamMember = {
+        key: `remote:${peer.id}:${a.id}`, name: a.name, side: chart?.side ?? peerSide,
+        role: sharedRole ?? chart?.role ?? 'worker', title: chart?.title ?? (sharedRole === 'orchestrator' ? 'Office coordination' : 'Role not shared'), tags: [], parentKeys: [],
+        status: a.status, source: 'remote', peer: peer.name, character: a.character
+      };
+      members.push(member);
+      pending.push({ member, parents: chart?.parents ?? [], cohort: `remote:${peer.id}`, explicit: false });
+    }
   }
   // The company preset is activated by a known coordinator, not by every generic office.
   if (members.some(m => m.name === 'Michael-A' || m.name === 'Michael-B')) {
@@ -112,6 +118,8 @@ export function buildTeamMembers(agents: readonly LocalTeamAgent[], peers: TeamP
         ? members.find(m => m.key === `local:${parent}`)
         : members.find(m => m.side === member.side && m.name.toLowerCase() === parent.toLowerCase()
           && (cohort === 'local' ? m.source === 'local' : cohort === 'planned' ? true : m.key.startsWith(`${cohort}:`)))
+          ?? (cohort.startsWith('remote:') && chartFor(parent)?.role === 'orchestrator'
+            ? members.find(m => m.side === member.side && m.role === 'orchestrator' && m.key.startsWith(`${cohort}:`)) : undefined)
           ?? members.find(m => m.side === member.side && m.name.toLowerCase() === parent.toLowerCase() && m.source === 'planned');
       // Strict levels make malformed saved relationships cycle-free. Orphans remain visible.
       if (match && match.side === member.side && rank[match.role] < rank[member.role] && !member.parentKeys.includes(match.key)) member.parentKeys.push(match.key);

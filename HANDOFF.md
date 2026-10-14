@@ -15,6 +15,7 @@ Ship an OQVIAN branded OFFICE-X with a shared office where two people can bring 
 - Turjo (@TRahman2414): agent response/startup fixes and right agent workspace; floor/scene files belong to Ahnaf. Details: [agent workspace handoff](docs/AGENT-WORKSPACE.md).
 
 ## Implemented
+- 2026-10-15 `trahman/agent-role-sections`: Turjo owns approved Orchestrators/Managers/Employees tabs and aligned reporting columns in the right agent workspace; floor/scene files excluded.
 - 2026-10-15 `trahman/preserve-manager-groups`: Turjo owns the right agent drawer fix. All agents and search preserve manager/worker groups; no floor/scene changes. See [agent teams handoff](docs/AGENT-TEAMS.md).
 - 2026-10-14 `trahman/office-discussion-rooms`: team chat/meeting membership and quiet, bounded discussion routing claimed by Turjo. Scope and steps: [office discussions](docs/OFFICE-DISCUSSIONS.md). Floor/scene files remain outside this work.
 - 2026-10-13 local `trahman/block-communication-graph`: approved block hierarchy, live roster status, separate directed message routes and redacted previews. See [Graph handoff](docs/BLOCK-GRAPH.md). Depends on the pending Teams branch; floor and scene files remain unchanged.
