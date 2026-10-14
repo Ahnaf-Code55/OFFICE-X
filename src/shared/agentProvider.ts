@@ -34,6 +34,7 @@ export type AgentProvider =
   | 'pi'
   | 'copilot'
   | 'cursor'
+  | 'kilo'
   | 'custom';
 
 /** Structured descriptor for how a NON-hiveAware provider gets hive lifecycle
@@ -579,6 +580,28 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
       win32: 'irm https://cursor.com/install?win32=true | iex'
     },
     docsUrl: 'https://cursor.com/docs/cli/install'
+  },
+  {
+    // Kilo Code CLI (@kilocode/cli): an OpenCode-style terminal agent with 500+ models,
+    // including OpenRouter. No hook bridge verified yet, so like Cursor it gets the
+    // protocol typed into the TUI and mail via the idle-nudge fallback. Set
+    // OPENROUTER_API_KEY in your own shell for the OpenRouter free models.
+    id: 'kilo',
+    label: 'Kilo Code',
+    defaultCommand: 'kilo',
+    commandGroups: [],
+    autoModeFlag: '',
+    autoFlag: '',
+    supportsModel: true,
+    modelFlag: '--model', // provider/model, e.g. openrouter/google/gemma-4-31b-it:free
+    hiveAware: false,
+    canReceiveInbox: true,
+    initialPromptFlag: undefined,
+    seedDelivery: 'type-into-tui',
+    recommendedOrchestratorModel: undefined,
+    resumeFlag: undefined,
+    installCommand: 'npm install -g @kilocode/cli', // trusted, hardcoded
+    docsUrl: 'https://kilo.ai/docs/cli'
   },
   {
     id: 'custom',

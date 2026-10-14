@@ -110,7 +110,18 @@
       { "id": "opencode-go/muse-spark-1.2-contributor", "label": "OpenCode Go · Muse Spark 1.2 Contributor", "minAppVersion": null, "maxAppVersion": null },
       { "id": "opencode-go/omen-alpha", "label": "OpenCode Go · Omen Alpha", "minAppVersion": null, "maxAppVersion": null },
       { "id": "opencode-go/gpt-6-luna", "label": "OpenCode Go · GPT-6 Luna", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "local/llama3", "label": "Local · OpenAI-compatible (set base-URL)", "minAppVersion": null, "maxAppVersion": null }
+      { "id": "local/llama3", "label": "Local · OpenAI-compatible (set base-URL)", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", "label": "OpenRouter free · nemotron-3-ultra-550b-a55b", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "label": "OpenRouter free · nemotron-3-super-120b-a12b", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/nvidia/nemotron-3.5-lightning:free", "label": "OpenRouter free · nemotron-3.5-lightning", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "label": "OpenRouter free · nemotron-3-nano-omni-30b-a3b-reasoning", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/google/gemma-4-31b-it:free", "label": "OpenRouter free · gemma-4-31b-it", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/google/gemma-4-26b-a4b-it:free", "label": "OpenRouter free · gemma-4-26b-a4b-it", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/poolside/laguna-s-2.1:free", "label": "OpenRouter free · laguna-s-2.1", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/poolside/laguna-xs-2.1:free", "label": "OpenRouter free · laguna-xs-2.1", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/cohere/north-mini-code:free", "label": "OpenRouter free · north-mini-code", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/thinkingmachines/inkling:free", "label": "OpenRouter free · inkling", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/thinkingmachines/inkling-small:free", "label": "OpenRouter free · inkling-small", "minAppVersion": null, "maxAppVersion": null }
     ],
     "crush": [
       { "label": "Crush default (config)", "minAppVersion": null, "maxAppVersion": null },
@@ -138,6 +149,20 @@
       { "id": "claude-sonnet-4", "label": "Claude Sonnet 4", "minAppVersion": null, "maxAppVersion": null },
       { "id": "gpt-5.4", "label": "GPT-5.4", "minAppVersion": null, "maxAppVersion": null },
       { "id": "gpt-5", "label": "GPT-5", "minAppVersion": null, "maxAppVersion": null }
+    ],
+    "kilo": [
+      { "label": "CLI default", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", "label": "OpenRouter free · nemotron-3-ultra-550b-a55b", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "label": "OpenRouter free · nemotron-3-super-120b-a12b", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/nvidia/nemotron-3.5-lightning:free", "label": "OpenRouter free · nemotron-3.5-lightning", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "label": "OpenRouter free · nemotron-3-nano-omni-30b-a3b-reasoning", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/google/gemma-4-31b-it:free", "label": "OpenRouter free · gemma-4-31b-it", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/google/gemma-4-26b-a4b-it:free", "label": "OpenRouter free · gemma-4-26b-a4b-it", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/poolside/laguna-s-2.1:free", "label": "OpenRouter free · laguna-s-2.1", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/poolside/laguna-xs-2.1:free", "label": "OpenRouter free · laguna-xs-2.1", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/cohere/north-mini-code:free", "label": "OpenRouter free · north-mini-code", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/thinkingmachines/inkling:free", "label": "OpenRouter free · inkling", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "openrouter/thinkingmachines/inkling-small:free", "label": "OpenRouter free · inkling-small", "minAppVersion": null, "maxAppVersion": null }
     ],
     "cursor": [
       { "label": "CLI default (auto)", "minAppVersion": null, "maxAppVersion": null },

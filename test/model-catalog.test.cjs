@@ -105,7 +105,18 @@ const SHIPPED = {
     ["opencode-go/muse-spark-1.2-contributor", "OpenCode Go · Muse Spark 1.2 Contributor"],
     ["opencode-go/omen-alpha", "OpenCode Go · Omen Alpha"],
     ["opencode-go/gpt-6-luna", "OpenCode Go · GPT-6 Luna"],
-    ["local/llama3", "Local · OpenAI-compatible (set base-URL)"]
+    ["local/llama3", "Local · OpenAI-compatible (set base-URL)"],
+    ["openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", "OpenRouter free · nemotron-3-ultra-550b-a55b"],
+    ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "OpenRouter free · nemotron-3-super-120b-a12b"],
+    ["openrouter/nvidia/nemotron-3.5-lightning:free", "OpenRouter free · nemotron-3.5-lightning"],
+    ["openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "OpenRouter free · nemotron-3-nano-omni-30b-a3b-reasoning"],
+    ["openrouter/google/gemma-4-31b-it:free", "OpenRouter free · gemma-4-31b-it"],
+    ["openrouter/google/gemma-4-26b-a4b-it:free", "OpenRouter free · gemma-4-26b-a4b-it"],
+    ["openrouter/poolside/laguna-s-2.1:free", "OpenRouter free · laguna-s-2.1"],
+    ["openrouter/poolside/laguna-xs-2.1:free", "OpenRouter free · laguna-xs-2.1"],
+    ["openrouter/cohere/north-mini-code:free", "OpenRouter free · north-mini-code"],
+    ["openrouter/thinkingmachines/inkling:free", "OpenRouter free · inkling"],
+    ["openrouter/thinkingmachines/inkling-small:free", "OpenRouter free · inkling-small"]
   ],
   crush: [
     [undefined, "Crush default (config)"],
@@ -133,6 +144,20 @@ const SHIPPED = {
     ["claude-sonnet-4", "Claude Sonnet 4"],
     ["gpt-5.4", "GPT-5.4"],
     ["gpt-5", "GPT-5"]
+  ],
+  kilo: [
+    [undefined, "CLI default"],
+    ["openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", "OpenRouter free · nemotron-3-ultra-550b-a55b"],
+    ["openrouter/nvidia/nemotron-3-super-120b-a12b:free", "OpenRouter free · nemotron-3-super-120b-a12b"],
+    ["openrouter/nvidia/nemotron-3.5-lightning:free", "OpenRouter free · nemotron-3.5-lightning"],
+    ["openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "OpenRouter free · nemotron-3-nano-omni-30b-a3b-reasoning"],
+    ["openrouter/google/gemma-4-31b-it:free", "OpenRouter free · gemma-4-31b-it"],
+    ["openrouter/google/gemma-4-26b-a4b-it:free", "OpenRouter free · gemma-4-26b-a4b-it"],
+    ["openrouter/poolside/laguna-s-2.1:free", "OpenRouter free · laguna-s-2.1"],
+    ["openrouter/poolside/laguna-xs-2.1:free", "OpenRouter free · laguna-xs-2.1"],
+    ["openrouter/cohere/north-mini-code:free", "OpenRouter free · north-mini-code"],
+    ["openrouter/thinkingmachines/inkling:free", "OpenRouter free · inkling"],
+    ["openrouter/thinkingmachines/inkling-small:free", "OpenRouter free · inkling-small"]
   ],
   cursor: [
     [undefined, "CLI default (auto)"],
@@ -191,7 +216,7 @@ test('the catalog is the schema config.ts expects', () => {
   assert.deepEqual(
     Object.keys(catalog.providers).sort(),
     ['antigravity', 'claude', 'copilot', 'codex', 'crush', 'cursor', 'custom',
-      'gemini', 'grok', 'kimi', 'opencode', 'pi', 'qwen'].sort()
+      'gemini', 'grok', 'kilo', 'kimi', 'opencode', 'pi', 'qwen'].sort()
   );
 });
 
