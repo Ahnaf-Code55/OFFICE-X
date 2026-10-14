@@ -130,3 +130,27 @@ export function matchingTeamKeys(members: readonly TeamMember[], query: string, 
   for (const key of [...keys]) visit(key);
   return keys;
 }
+
+export interface TeamBranch { member: TeamMember; children: TeamBranch[] }
+
+/** Both drawer views retain reporting paths. All agents hides unfilled chart
+ * positions, but keeps any placeholder needed to identify an employee's manager. */
+export function buildTeamTree(members: readonly TeamMember[], query: string, includePlanned = true): TeamBranch[] {
+  const candidates = includePlanned ? members : members.filter(m => m.source !== 'planned');
+  const matches = matchingTeamKeys(candidates, query);
+  const visible = new Set(matches);
+  const byKey = new Map(members.map(m => [m.key, m]));
+  const includeParents = (key: string) => {
+    for (const parent of byKey.get(key)?.parentKeys ?? []) if (!visible.has(parent)) {
+      visible.add(parent);
+      includeParents(parent);
+    }
+  };
+  for (const key of matches) includeParents(key);
+  const shown = members.filter(m => visible.has(m.key));
+  const branch = (member: TeamMember): TeamBranch => ({
+    member,
+    children: shown.filter(child => child.parentKeys.includes(member.key)).map(branch)
+  });
+  return shown.filter(m => !m.parentKeys.some(key => visible.has(key) && byKey.has(key))).map(branch);
+}

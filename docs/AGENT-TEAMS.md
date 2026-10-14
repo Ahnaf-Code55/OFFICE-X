@@ -2,7 +2,7 @@
 
 Updated: 2026-10-13. Publish branch: `trahman/office-teams-block-graph`.
 
-The flat buttons in the right agent workspace are replaced by a Teams drawer and a deduplicated All agents view. Side filters cover Turjo, Ahnaf and other employees. Search preserves reporting paths; manager chevrons reveal workers. Each local row shows its role, work area, model and current status. Selecting it opens the existing workspace.
+The flat buttons in the right agent workspace are replaced by a Teams drawer and an All agents view that both preserve manager/worker groups. Side filters cover Turjo, Ahnaf and other employees. Search preserves reporting paths; manager chevrons reveal workers. Each local row shows its role, work area, model and current status. Selecting it opens the existing workspace.
 
 Local organization metadata persists with the roster: side, role, manager IDs and tags. A shared specialist is one agent with several managers. The details view shows the saved goal and allows team assignment edits without changing its CLI or permissions. Unknown and invalid assignments remain visible.
 
@@ -24,3 +24,11 @@ Typecheck and production build passed. Focused suite: 990 tests, 988 passed, 2 e
 ## Next step
 
 The owner approved publishing the Teams and Graph UI for review. Real Ahnaf-device presence and two-computer acceptance still need a connected Shared Office; fixture checks do not prove that connection. Keep Ahnaf's floor/scene changes separate. The earlier Codex folder-trust fix is published in a separate PR.
+
+## Manager grouping fix (2026-10-15)
+
+Branch: `trahman/preserve-manager-groups`. All agents previously rendered every employee as a separate root even when saved manager IDs were correct. Both drawer modes now render the same reporting tree. All agents omits unrelated unfilled chart positions while retaining any placeholder needed to identify a live employee's manager. Worker/model search retains all reporting paths, and shared workers appear under each assigned manager without additional hires. Existing saved drawer preferences require no reset or migration.
+
+Verification: 12 hierarchy tests passed; full suite 1,005 passed, two existing skips; Typecheck and production build passed. Live desktop checks on the saved 14-person roster showed Michael-B Jordan → Forge → Core in All agents, both Forge/Lighthouse → Patch paths in search, and preserved groups after selecting another employee and switching drawer modes. The unique agent count remains 14. Remote Ahnaf hierarchy is covered by fixtures; cross-device presence still needs both computers connected.
+
+Before/after screenshots: `docs/review/manager-groups/before.png` and `after.png`, same dark theme, viewport, side filter and roster. This fix changes only the right drawer and its tree projection; assignments, models, goals, chat/meeting routing and the floor/scene remain unchanged.
