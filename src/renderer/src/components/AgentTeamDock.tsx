@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { buildTeamMembers, matchingTeamKeys, type AgentOrganization, type TeamMember, type TeamRole, type TeamSide } from '@shared/agentTeams';
+import { buildTeamMembers, buildTeamTree, type AgentOrganization, type TeamBranch, type TeamMember, type TeamRole, type TeamSide } from '@shared/agentTeams';
 import { useStore, type Agent } from '@/store/store';
 import { getRemotePresence, subscribeRemotePresence, publishRemotePresence } from '@/scene/office/remotePresence';
 import { Icon } from './Icon';
@@ -52,7 +52,7 @@ export function AgentTeamDock({ agent, onSelect, restoring, restoreCount, onRest
   const members = useMemo(() => buildTeamMembers(agents, presence), [agents, presence]);
   const selected = members.find(m => m.localId === agent.id);
   const parents = members.filter(m => selected?.parentKeys.includes(m.key));
-  const visible = matchingTeamKeys(members, query, prefs.mode === 'teams');
+  const tree = buildTeamTree(members, query, prefs.mode === 'teams');
   const active = members.filter(m => m.source !== 'planned');
   const children = (key: string) => members.filter(m => m.parentKeys.includes(key));
   const isExpanded = (m: TeamMember) => m.role === 'orchestrator' || !!query.trim() || prefs.expanded.includes(m.key);
@@ -68,8 +68,7 @@ export function AgentTeamDock({ agent, onSelect, restoring, restoreCount, onRest
       onSelect(m.localId);
     } else setRemoteDetail(m.key);
   };
-  const row = (m: TeamMember, depth = 0): JSX.Element | null => {
-    if (!visible.has(m.key)) return null;
+  const row = ({ member: m, children: branches }: TeamBranch, depth = 0): JSX.Element => {
     const kids = children(m.key);
     const expanded = isExpanded(m);
     return <div className="at-branch" key={m.key}>
@@ -85,7 +84,7 @@ export function AgentTeamDock({ agent, onSelect, restoring, restoreCount, onRest
         </button>
         <span className="at-status" data-status={m.status}><i />{statusLabel(m)}</span>
       </div>
-      {prefs.mode === 'teams' && expanded && kids.length > 0 && <div className="at-children">{kids.map(k => row(k, depth + 1))}</div>}
+      {expanded && branches.length > 0 && <div className="at-children">{branches.map(child => row(child, depth + 1))}</div>}
     </div>;
   };
   const detail = members.find(m => m.key === remoteDetail);
@@ -96,12 +95,11 @@ export function AgentTeamDock({ agent, onSelect, restoring, restoreCount, onRest
       <label className="at-search"><SearchIcon /><input ref={search} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search agents, roles or models…" aria-label="Search agents, roles or models" />{query && <button onClick={() => setQuery('')} aria-label="Clear agent search">×</button>}</label>
       <div className="at-scroll">
         {(['turjo', 'ahnaf', 'unassigned'] as const).filter(side => prefs.side === 'all' || side === prefs.side).map(side => {
-          const sideMembers = members.filter(m => m.side === side && visible.has(m.key));
-          const listed = prefs.mode === 'all' ? sideMembers.filter(m => m.source !== 'planned') : sideMembers.filter(m => !m.parentKeys.some(k => members.some(parent => parent.key === k)));
+          const listed = tree.filter(branch => branch.member.side === side);
           if (!listed.length) return null;
           return <section className="at-side" key={side} aria-label={sideLabels[side]}><h3><span>{sideLabels[side]}</span><small>{members.filter(m => m.side === side && m.source !== 'planned').length} agents</small></h3>{listed.map(m => row(m))}</section>;
         })}
-        {!members.some(m => visible.has(m.key) && (prefs.side === 'all' || m.side === prefs.side) && (prefs.mode === 'teams' || m.source !== 'planned')) && <p className="at-empty">No agents match this view.</p>}
+        {!tree.some(branch => prefs.side === 'all' || branch.member.side === prefs.side) && <p className="at-empty">No agents match this view.</p>}
         {detail && <div className="at-detail" role="status"><strong>{detail.name} · {statusLabel(detail)}</strong><p>{detail.title}</p><p>{detail.source === 'remote' ? `Shared by ${detail.peer}. Model, goal and terminal access are not shared.` : 'This is a company chart position. It has no running session yet.'}</p><button onClick={() => setRemoteDetail(null)}>Close details</button></div>}
         {selected && <details className="at-detail"><summary>{agent.name} · Role, goal & assignments</summary><p>{agent.description}</p><p><strong>Model:</strong> {agent.model || 'CLI default'}</p><p><strong>Tags:</strong> {selected.tags.join(', ') || selected.title}</p><p><strong>Reports to:</strong> {parents.map(m => m.name).join(', ') || 'Human leadership'}</p><p className="at-goal">{agent.goal || 'No standing goal set.'}</p><button onClick={() => setEditing(!editing)}>{editing ? 'Cancel assignment edit' : 'Edit team assignment'}</button>{editing && <AssignmentEditor key={agent.id} agent={agent} selected={selected} members={members} onDone={() => setEditing(false)} />}</details>}
       </div>
