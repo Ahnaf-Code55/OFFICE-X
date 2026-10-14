@@ -2077,13 +2077,13 @@ export function OfficeFloor() {
           const p = c.getPixelPosition();
           const a = agents.find((q) => q.id === c.agentId);
           const dot = a?.status === 'typing' || a?.status === 'compacting' || a?.status === 'looping' ? '#34d399' : a?.status === 'waiting' ? '#fbbf24' : '#9aa3ad';
-          list.push({ id: c.agentId, name: rt.charName, x: p.x, y: p.y, anim: c.getAnimation(), dir: c.getFacing(), sitting: c.isSitting(), visible: c.isVisible, label: a?.name ?? rt.charName, dot, thought: c.getThought(), glyph: c.getStatusGlyph() });
+          list.push({ id: c.agentId, name: rt.charName, x: p.x, y: p.y, anim: c.getAnimation(), dir: c.getFacing(), sitting: c.isSitting(), visible: c.isVisible, label: a?.name ?? rt.charName, dot, thought: c.getThought(), glyph: c.getStatusGlyph(), status: a?.status, carrying: a?.carrying });
         }
         for (const rt of remoteRuntimes.values()) {
           const c = rt.character;
           const p = c.getPixelPosition();
           const dot = rt.status === 'typing' || rt.status === 'compacting' || rt.status === 'looping' ? '#34d399' : rt.status === 'waiting' ? '#fbbf24' : '#9aa3ad';
-          list.push({ id: c.agentId, name: rt.charName, x: p.x, y: p.y, anim: c.getAnimation(), dir: c.getFacing(), sitting: c.isSitting(), visible: c.isVisible, label: rt.label.text || rt.charName, dot, remote: true, thought: c.getThought(), glyph: c.getStatusGlyph() });
+          list.push({ id: c.agentId, name: rt.charName, x: p.x, y: p.y, anim: c.getAnimation(), dir: c.getFacing(), sitting: c.isSitting(), visible: c.isVisible, label: rt.label.text || rt.charName, dot, remote: true, thought: c.getThought(), glyph: c.getStatusGlyph(), status: rt.status });
         }
         o3d.frame(list, ticker.deltaMS / 1000);
       };
