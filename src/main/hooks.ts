@@ -302,7 +302,12 @@ export class HookServer {
     // Merged with the roster line below so the two injections never displace each
     // other (only ONE additionalContext can be returned per hook).
     let steer: string | null = null;
-    if ((event === 'UserPromptSubmit' || event === 'PostToolUse') && agentId && this.control) {
+    // Antigravity's PostToolUse output cannot inject context. Preserve its note
+    // until PreInvocation, whose injectSteps contract reaches the next model
+    // call, rather than dequeueing guidance into an ignored response.
+    const canInjectSteer = event === 'UserPromptSubmit' || event === 'PreInvocation'
+      || (event === 'PostToolUse' && !!agentId && this.hive.registry().agents[agentId]?.provider !== 'antigravity');
+    if (canInjectSteer && agentId && this.control) {
       steer = this.control.takeSteer(agentId) ?? null;
     }
 
@@ -328,7 +333,7 @@ export class HookServer {
     // one of the largest elements in a long transcript. Kept out of
     // --append-system-prompt (volatile-free cache invariant); lives on the live
     // hook channel instead.
-    const wantsGoal = (event === 'SessionStart' || event === 'UserPromptSubmit') && !!agentId;
+    const wantsGoal = (event === 'SessionStart' || event === 'UserPromptSubmit' || event === 'PreInvocation') && !!agentId;
     const goalRaw = wantsGoal ? (this.getStandingGoal?.(agentId) ?? null) : null;
     let goal: string | null = null;
     if (wantsGoal) {

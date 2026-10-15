@@ -1143,7 +1143,7 @@ export class HiveManager {
    * idempotent resume after a crash/restart AND the accounting/dedup key for cost
    * samples. Best-effort — never throws into a hook handler.
    */
-  recordSession(agentId: string, sessionId: string): void {
+  recordSession(agentId: string, sessionId: string, source: 'hook' | 'usage' = 'hook'): void {
     const root = this.root();
     if (!root || !sessionId) return;
     try {
@@ -1153,6 +1153,10 @@ export class HiveManager {
       // A late hook/usage sample from the stopped engine must not overwrite the
       // new engine's resume key. Its history is retained under the old provider.
       const provider = agent.provider ?? 'claude';
+      // Codex OTel identifies this CLI invocation, which can differ from the
+      // durable thread being resumed. Only native hooks supply its resume key;
+      // accounting still uses the original telemetry ID in the cost ledger.
+      if (provider === 'codex' && source === 'usage') return;
       if (Object.entries(agent.sessionsByProvider ?? {}).some(([owner, id]) => owner !== provider && id === sessionId)) return;
       agent.sessionId = sessionId;
       agent.sessionsByProvider = { ...agent.sessionsByProvider, [agent.provider ?? 'claude']: sessionId };

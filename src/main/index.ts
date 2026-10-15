@@ -1309,10 +1309,10 @@ function runBreakerBeat(progressWindowMs: number): void {
     // ONLY from the hook shim, so any window where hooks don't land leaves the
     // registry with no sessionId and "Restart & Continue" refuses to continue —
     // while this very sample proves the app knew the live session id all along
-    // (it was already being written to the cost ledger one line above). Same id,
-    // same liveness gate; recordSession writes only on change, so this is a
-    // no-op once the hooks are flowing.
-    if (sample?.sessionId) hive.recordSession(id, sample.sessionId);
+    // (it was already being written to the cost ledger one line above).
+    // Tag telemetry explicitly: Codex's invocation ID is not its durable resume
+    // thread, so recordSession keeps that provider on native hook identity.
+    if (sample?.sessionId) hive.recordSession(id, sample.sessionId, 'usage');
     if (id === reg.godId) continue;            // breaker skips god
     // Progress = fresh coordination files OR a recent OTel tool span. The span
     // leg closes the background-work blind spot: subagent/Workflow tool calls
