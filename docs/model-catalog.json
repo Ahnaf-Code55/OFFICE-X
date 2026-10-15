@@ -50,12 +50,13 @@
       { "label": "CLI default", "minAppVersion": null, "maxAppVersion": null },
       { "id": "gemini-3.8-flash-high", "label": "Gemini 3.8 Flash · High", "minAppVersion": null, "maxAppVersion": null },
       { "id": "gemini-3.8-flash-medium", "label": "Gemini 3.8 Flash · Med", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "gemini-3.7-flash-high", "label": "Gemini 3.7 Flash · High", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "gemini-3.7-flash-medium", "label": "Gemini 3.7 Flash · Med", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "gemini-3.6-flash-high", "label": "Gemini 3.6 Flash · High", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "gemini-3.6-flash-medium", "label": "Gemini 3.6 Flash · Med", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "gemini-3.1-pro-high", "label": "Gemini 3.1 Pro · High", "minAppVersion": null, "maxAppVersion": null },
-      { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "minAppVersion": null, "maxAppVersion": null }
+      { "id": "gemini-3.8-flash-low", "label": "Gemini 3.8 Flash · Low", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "claude-opus-5-5-high", "label": "Claude Opus 5.5 · High", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "claude-opus-5-5-medium", "label": "Claude Opus 5.5 · Med", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "claude-opus-5-5-low", "label": "Claude Opus 5.5 · Low", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "claude-sonnet-5-5-high", "label": "Claude Sonnet 5.5 · High", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "claude-sonnet-5-5-medium", "label": "Claude Sonnet 5.5 · Med", "minAppVersion": null, "maxAppVersion": null },
+      { "id": "claude-sonnet-5-5-low", "label": "Claude Sonnet 5.5 · Low", "minAppVersion": null, "maxAppVersion": null }
     ],
     "qwen": [
       { "label": "default", "minAppVersion": null, "maxAppVersion": null },

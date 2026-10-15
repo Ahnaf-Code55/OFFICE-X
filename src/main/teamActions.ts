@@ -1,3 +1,4 @@
+import type { ChatWireBody } from '../shared/officeRooms';
 import { isPeerActionAllowed, type TeamMessage } from '../shared/teamProtocol';
 import type { PeerControlLevel, TriggerMode } from '../shared/triggers';
 
@@ -21,7 +22,7 @@ export type ParsedTeamAction =
   | { type: 'agent-prompt'; agentId: string; prompt: string }
   | { type: 'terminal-input'; agentId: string; input: string }
   | { type: 'terminal-stream'; agentId: string; output: string; sequence: number; streamId: string; gap: boolean }
-  | { type: 'chat'; channel: 'leadership' | 'managers' | 'everyone'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string }
+  | ({ type: 'chat' } & ChatWireBody)
   | ({ type: 'rtc-signal' } & RtcSignal);
 
 /**
@@ -144,7 +145,11 @@ export function parseTeamAction(input: {
       sequence: body.sequence as number, streamId: body.streamId, gap: body.gap };
   }
   if (message.action === 'chat') {
-    if (!exactKeys(body, ['channel', 'text', 'image', 'authorKind', 'authorName'])
+    const baseKeys = ['channel', 'text', 'image', 'authorKind', 'authorName'];
+    const optionalKeys = ['requestId', 'intent'].filter(k => Object.hasOwn(body,k));
+    if (!exactKeys(body, [...baseKeys, ...optionalKeys])
+      || (body.requestId !== undefined && (typeof body.requestId !== 'string' || !/^[a-f0-9]{16}$/.test(body.requestId)))
+      || (body.intent !== undefined && (!['report','start','stop','continue'].includes(String(body.intent)) || body.authorKind !== 'human'))
       || (body.channel !== 'leadership' && body.channel !== 'managers' && body.channel !== 'everyone')
       || typeof body.text !== 'string' || body.text.length > MAX_CHAT_TEXT
       || typeof body.image !== 'string' || body.image.length > MAX_CHAT_IMAGE_CHARS
@@ -154,7 +159,9 @@ export function parseTeamAction(input: {
       throw new Error('invalid teammate chat message');
     }
     return { type: 'chat', channel: body.channel, text: body.text.trim(), image: body.image, authorKind: body.authorKind,
-      authorName: text(body.authorName, 1, 60, 'chat author') };
+      authorName: text(body.authorName, 1, 60, 'chat author'),
+      ...(body.requestId !== undefined ? {requestId: body.requestId as string} : {}),
+      ...(body.intent !== undefined ? {intent: body.intent as ChatWireBody['intent']} : {}) };
   }
   if (message.action === 'rtc-signal') return { type: 'rtc-signal', ...parseRtcSignal(body) };
   throw new Error(`unsupported teammate action: ${message.action}`);

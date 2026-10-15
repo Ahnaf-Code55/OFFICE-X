@@ -1,3 +1,4 @@
+import { INITIAL_TERMINAL_SIZE } from '@shared/terminalGeometry';
 import { useEffect, useLayoutEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PixelPanel } from './PixelPanel';
@@ -474,8 +475,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
       command: exe,
       provider,
       args,
-      cols: 100,
-      rows: 30,
+      ...INITIAL_TERMINAL_SIZE,
       // When set, the main process spawns this agent in its own git worktree.
       // Forced OFF when resuming a session — `--resume` needs the real cwd's
       // transcript, not a fresh worktree with a different (empty) project dir.

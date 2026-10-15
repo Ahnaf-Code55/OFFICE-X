@@ -1,3 +1,4 @@
+import { roleTier, namedRole, type ChatIntent } from '../shared/officeRooms';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { codexLimits, type UsageLimits } from '../shared/usageLimits';
 import { fetchOpenCodeGoLimits } from './openCodeUsage';
@@ -357,7 +358,7 @@ function standingGoalFromRoster(agentId: string): string | null {
   return null;
 }
 // Worker inbox-wake watchdog (#151): finds idle workers with undrained inbox mail
-// and types the same guarded nudge the renderer would have (so a throttled
+// and queues the same guarded nudge the renderer would have (so a throttled
 // background window can't leave a worker parked on an unread inbox forever).
 // HookServer feeds it the hook stream so a permission/HITL prompt blocks nudges.
 const workerWake = new WorkerWakeWatchdog();
@@ -1308,10 +1309,10 @@ function runBreakerBeat(progressWindowMs: number): void {
     // ONLY from the hook shim, so any window where hooks don't land leaves the
     // registry with no sessionId and "Restart & Continue" refuses to continue —
     // while this very sample proves the app knew the live session id all along
-    // (it was already being written to the cost ledger one line above). Same id,
-    // same liveness gate; recordSession writes only on change, so this is a
-    // no-op once the hooks are flowing.
-    if (sample?.sessionId) hive.recordSession(id, sample.sessionId);
+    // (it was already being written to the cost ledger one line above).
+    // Tag telemetry explicitly: Codex's invocation ID is not its durable resume
+    // thread, so recordSession keeps that provider on native hook identity.
+    if (sample?.sessionId) hive.recordSession(id, sample.sessionId, 'usage');
     if (id === reg.godId) continue;            // breaker skips god
     // Progress = fresh coordination files OR a recent OTel tool span. The span
     // leg closes the background-work blind spot: subagent/Workflow tool calls
@@ -3658,12 +3659,15 @@ ipcMain.handle('hive:addTask', (_evt, task: unknown) => {
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
   return { ok: hive.addTask(task as HiveTask) };
 });
-ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown) => {
+ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown, expectedHumanQA: unknown) => {
   if (typeof id !== 'string' || !id || !patch || typeof patch !== 'object' || Array.isArray(patch)) {
     return { ok: false, error: 'invalid task patch' };
   }
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
-  return { ok: hive.patchTask(id, patch as Partial<Omit<HiveTask, 'id'>>) };
+  if (expectedHumanQA !== undefined && !Array.isArray(expectedHumanQA)) {
+    return { ok: false, error: 'invalid human question history guard' };
+  }
+  return { ok: hive.patchTask(id, patch as Partial<Omit<HiveTask, 'id'>>, expectedHumanQA as HiveTask['humanQA']) };
 });
 ipcMain.handle('hive:deleteTask', (_evt, id: unknown) => {
   if (typeof id !== 'string' || !id) return { ok: false, error: 'invalid task id' };
@@ -4617,9 +4621,9 @@ function dispatchTeamMessage(message: TeamMessage, peerId: string): void {
         if (!win.isDestroyed()) win.webContents.send('org:terminalOutput', payload);
       }
     },
-    receiveChat: (command) => chat.receiveRemote({ memberName: member.displayName,
+    receiveChat: (command) => chat.receiveRemote({ memberId: member.memberId, memberName: member.displayName,
       canPromptAgents: isPeerActionAllowed(member.controlLevel, 'agent-prompt'), channel: command.channel, text: command.text, image: command.image,
-      authorKind: command.authorKind, authorName: command.authorName }),
+      authorKind: command.authorKind, authorName: command.authorName, requestId: command.requestId, intent: command.intent }),
     // Call setup is relayed straight to the meeting room; the renderer decides
     // whether to ring, and media then flows peer to peer, never through here.
     receiveRtcSignal: (signal) => {
@@ -4866,7 +4870,7 @@ async function sendLocalTeamPresence(): Promise<void> {
   const name = cfg.displayName.trim().slice(0, 32) || 'OFFICE-X teammate';
   let snapshot: TeamPresencePeer[];
   try {
-    snapshot = parseTeamPresence([{ id: identity.identity.deviceId, name, agents: localTeamPresenceAgents }]);
+    snapshot = parseTeamPresence([{ id: identity.identity.deviceId, name, agents: localTeamPresenceAgents.map(a=>({...a,chatTier:chat.tiers()[a.id] ?? chatRole(a.id).tier})) }]);
   } catch { return; }
   const peers = persist.listTrustedTeamMembers(cfg.officeId);
   await Promise.allSettled(peers.map(async (member) => {
@@ -5105,6 +5109,13 @@ ipcMain.handle('org:transportStatus', () => {
     error: teamTransportError || undefined
   };
 });
+function chatRole(id: string): { tier: ChatTier; work: string } {
+  const entry = roster.read()?.agents.find(raw => raw && typeof raw === 'object' && (raw as {id?: unknown}).id === id) as {organization?: {role?: unknown; tags?: unknown[]}; description?: string} | undefined;
+  const reg = hive.registry();
+  const agent = reg.agents[id];
+  return {tier: roleTier(entry?.organization?.role ?? namedRole(agent?.name ?? ''), id === reg.godId),
+    work: (Array.isArray(entry?.organization?.tags) ? entry.organization.tags.filter(t=>typeof t === 'string').join(', ') : '') || agent?.role || entry?.description || 'Assigned office role'};
+}
 const chat = createChat({
   dir: join(app.getPath('userData'), 'chat'),
   getKv: (key) => persist.getKv(key),
@@ -5116,26 +5127,33 @@ const chat = createChat({
   },
   agentIds: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived && !a.isAssistant).map(([id]) => id),
   leadAgentId: () => hive.registry().godId ?? undefined,
+  agentTier: id => chatRole(id).tier,
+  agentWork: id => chatRole(id).work,
   // Same path as Slack: the renderer queues the prompt and types it once the agent is idle.
-  deliverToAgent: (agentId, _subject, body) => {
-    for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:agentPrompt', { agentId, text: body });
+  deliverToAgent: (agentId, subject, body, request) => {
+    for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:agentPrompt', { agentId, text: subject, instruction: body, request });
   },
   sendToTeammates: async (body) => {
     const cfg = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
     if (!cfg.enabled || !cfg.officeId || !persist.isOpen) return;
     const members = persist.listTrustedTeamMembers(cfg.officeId);
-    const results = await Promise.allSettled(members.map((m) => sendTeamMessage(m.memberId, 'chat', body)));
+    const results = await Promise.allSettled(members.map((m) => sendTeamMessage(m.memberId, 'chat', { ...body })));
     const failed = members.filter((_, i) => results[i].status === 'rejected').map((m) => m.displayName);
     if (failed.length) throw new Error(`not delivered to ${failed.join(', ')}`);
   },
   emit: (message) => {
     for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:message', message);
-  }
+  },
+  emitRooms: rooms => { for (const win of allWindows) if (!win.isDestroyed()) win.webContents.send('chat:rooms', rooms); }
 });
-hive.onChat = (agentId, body) => chat.receiveAgent(agentId, body);
+hive.onChat = (agentId, body, conversation) => chat.receiveAgent(agentId, body, conversation);
 const isAppWindow = (event: Electron.IpcMainInvokeEvent): boolean =>
   [...allWindows].some((win) => !win.isDestroyed() && win.webContents.id === event.sender.id);
 ipcMain.handle('chat:list', (event) => (isAppWindow(event) ? chat.list() : []));
+ipcMain.handle('chat:canDeliver', (event, agentId: unknown, requestId: unknown, channel: unknown) =>
+  isAppWindow(event) && typeof agentId === 'string' && typeof requestId === 'string' && CHAT_CHANNELS.includes(channel as ChatChannel)
+    ? chat.canDeliver(agentId, requestId, channel as ChatChannel) : false);
+ipcMain.handle('chat:rooms', event => isAppWindow(event) ? chat.rooms() : []);
 ipcMain.handle('chat:getTiers', (event) => (isAppWindow(event) ? chat.tiers() : {}));
 ipcMain.handle('chat:setTier', (event, agentId: unknown, tier: unknown) => {
   if (!isAppWindow(event) || typeof agentId !== 'string'
@@ -5149,12 +5167,14 @@ ipcMain.handle('chat:send', async (event, raw: unknown) => {
   const text = typeof value.text === 'string' ? value.text.trim() : '';
   const image = typeof value.image === 'string' ? value.image : '';
   const channel = value.channel as ChatChannel;
+  const intent = value.intent as ChatIntent | undefined;
+  if (intent !== undefined && !['report', 'start', 'stop', 'continue'].includes(intent)) return {ok:false,error:'invalid room action'};
   if (!CHAT_CHANNELS.includes(channel) || text.length > MAX_CHAT_TEXT || image.length > MAX_CHAT_IMAGE_CHARS || (!text && !image)
     || (image && !/^data:image\/(png|jpeg|webp);base64,/.test(image))) {
     return { ok: false, error: 'message is empty or too large' };
   }
   try {
-    await chat.post(channel, text, image);
+    await chat.post(channel, text, image, intent);
     return { ok: true };
   } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
 });
@@ -6372,22 +6392,13 @@ function bootstrapHiveServices(): void {
 const WORKER_WAKE_POLL_MS = 15_000;
 let workerWakeTimer: ReturnType<typeof setInterval> | null = null;
 
-/** Type the renderer's guarded nudge into one worker's PTY — text first, Enter a
- *  tick later (the exact submitToPty pattern: a single-chunk write would land the
- *  "\r" inside the input box and never submit). Best-effort + never throws. */
-function nudgeWorker(ptyId: string, ids: string[] = []): void {
-  // Same text the renderer queues (#187's inboxNudgeText), so the two wake paths
-  // produce byte-identical nudges: the queue's one-pending rule recognises either
-  // via isInboxNudge, and a watchdog nudge names its ids so the agent can still
-  // tell "I filed this last turn" from "woken for nothing".
-  const wrote = ptyManager.write(ptyId, inboxNudgeText(ids));
-  if (!wrote.ok) { console.warn(`[worker-wake] write failed for ${ptyId}: ${wrote.error}`); return; }
-  setTimeout(() => {
-    try {
-      const submitted = ptyManager.write(ptyId, '\r');
-      if (!submitted.ok) console.warn(`[worker-wake] submit failed for ${ptyId}: ${submitted.error}`);
-    } catch (e) { console.error('[worker-wake] submit threw:', e); }
-  }, 400); // past Codex's ~120ms paste-burst window, or its Enter becomes a newline
+/** Wake through the existing guarded queue. Raw PTY writes could select a
+ * native approval or overwrite a draft when hook notifications are missing. */
+function nudgeWorker(agentId: string, ids: string[] = []): void {
+  liveWebContents()?.send('hive:enqueueToAgent', {
+    targetId: agentId,
+    text: inboxNudgeText(ids)
+  });
 }
 
 /** Main-process inbox-wake beat (issue #151, fix A): the renderer's idle nudge
@@ -6397,16 +6408,16 @@ function nudgeWorker(ptyId: string, ids: string[] = []): void {
  *  it gathers live-worker facts (PTY quiescence, inbox depth, control flags) and
  *  lets WorkerWakeWatchdog.decide apply the exact renderer guards (idle-only,
  *  post-boot-grace, not paused/halted, no pending HITL, cooldown), then types the
- *  same nudge the renderer would have. God is never a candidate (its heartbeat
- *  path already re-engages it). */
+ *  same nudge the renderer would have. Pending orchestrator mail also qualifies;
+ *  its optional heartbeat may be disabled. */
 function runWorkerWakeBeat(): void {
   if (!hive.enabled()) return;
   const reg = hive.registry();
-  if (!reg?.agents || !reg.godId) return;
+  if (!reg?.agents || !reg.godId || !liveWebContents()) return;
   const now = Date.now();
   const facts: WorkerWakeFacts[] = [];
   for (const [agentId, a] of Object.entries(reg.agents)) {
-    if (agentId === reg.godId || a?.archived) continue;
+    if (a?.archived) continue;
     const ptyId = ptyForAgent(agentId);
     if (!ptyId) continue;
     const snap = control.snapshot(agentId);
@@ -6430,7 +6441,7 @@ function runWorkerWakeBeat(): void {
     const ids = hive.inbox(agentId).map((m) => m.id).filter(Boolean);
     if (!ids.length) { console.log(`[worker-wake] ${agentId} drained before delivery, skipping`); continue; }
     console.log(`[worker-wake] nudging ${agentId} on ${ptyId} (${ids.length} pending)`);
-    nudgeWorker(ptyId, ids);
+    nudgeWorker(agentId, ids);
   }
 }
 

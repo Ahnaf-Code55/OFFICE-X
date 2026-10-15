@@ -1,3 +1,4 @@
+import type { RoomRequest } from '@shared/officeRooms';
 import { create } from 'zustand';
 import type { AgentOrganization } from '@shared/agentTeams';
 import type { AccentColorName } from '@/design/tokens';
@@ -163,6 +164,8 @@ export interface QueuedMessage {
    *  status would otherwise latch out every future compact attempt for a
    *  compaction that never actually happened. */
   compactUsed?: number;
+  /** A bounded room turn: never deliver after cancellation, expiry or restart. */
+  chatRequest?: RoomRequest;
 }
 
 // 'files' retired in v0.3.4 (the per-agent IDE button superseded it) — a
@@ -309,7 +312,7 @@ interface State {
   /** Park a message for an agent. Returns nothing; the flush loop delivers it.
    *  `meta.instruction`, when set, is what gets typed into the PTY instead of
    *  `text` (UI/card surfaces still show `text`). */
-    enqueueMessage: (agentId: string, text: string, meta?: { slack?: { channel: string; thread_ts: string }; instruction?: string; precondition?: QueuedMessage['precondition']; compactUsed?: number }) => void;
+    enqueueMessage: (agentId: string, text: string, meta?: { slack?: { channel: string; thread_ts: string }; instruction?: string; precondition?: QueuedMessage['precondition']; compactUsed?: number; chatRequest?: RoomRequest }) => void;
   /** Drop a single queued message (user removed it, or it was just delivered). */
   removeQueuedMessage: (agentId: string, messageId: string) => void;
   /** "Send now" while floor auto-delivery is paused: marks the message manual
@@ -943,7 +946,8 @@ export const useStore = create<State>((set, get) => ({
         ...(meta?.slack ? { slack: meta.slack } : {}),
         ...(meta?.instruction ? { instruction: meta.instruction } : {}),
         ...(meta?.precondition ? { precondition: meta.precondition } : {}),
-        ...(meta?.compactUsed !== undefined ? { compactUsed: meta.compactUsed } : {})
+        ...(meta?.compactUsed !== undefined ? { compactUsed: meta.compactUsed } : {}),
+        ...(meta?.chatRequest ? {chatRequest:meta.chatRequest} : {})
       };
       const messageQueues = { ...s.messageQueues, [agentId]: [...(s.messageQueues[agentId] ?? []), msg] };
       persistQueues(messageQueues);

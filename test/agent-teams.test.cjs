@@ -58,3 +58,44 @@ test('flat agent search can omit ancestors while Teams keeps reporting paths', (
   const members=buildTeamMembers(roster,[]);
   assert.deepEqual([...matchingTeamKeys(members,'glm-5.3',false)],['local:patch']);
 });
+
+const {buildTeamTree} = require('./load-ts.cjs')('src/shared/agentTeams.ts');
+const paths = tree => tree.flatMap(({member,children}) => [[member.key],...paths(children).map(path=>[member.key,...path])]);
+test('All agents keeps renamed coordinator and saved manager IDs above workers, including shared specialists', () => {
+  const organization=(role,reportsTo)=>({side:'turjo',role,reportsTo,tags:[]});
+  const members=buildTeamMembers([
+    local('god','Michael-B Jordan',{isGod:true,organization:organization('orchestrator',[])}),
+    local('forge-new-id','Forge',{organization:organization('manager',['god'])}),
+    local('qa-new-id','Lighthouse',{organization:organization('manager',['god'])}),
+    local('core','Core',{organization:organization('worker',['forge-new-id'])}),
+    local('patch','Patch',{organization:organization('worker',['forge-new-id','qa-new-id'])})
+  ],[]);
+  const tree=buildTeamTree(members,'',false);
+  assert.deepEqual(tree.map(b=>b.member.key),['local:god']);
+  for(const path of [['local:god','local:forge-new-id','local:core'],['local:god','local:forge-new-id','local:patch'],['local:god','local:qa-new-id','local:patch']])assert(paths(tree).some(p=>JSON.stringify(p)===JSON.stringify(path)));
+  assert.equal(members.filter(m=>m.localId==='patch').length,1);
+});
+test('worker/model search preserves each full manager path in both drawer modes', () => {
+  const members=buildTeamMembers(roster,[]);
+  for(const includePlanned of [true,false]) {
+    const found=paths(buildTeamTree(members,'glm-5.3',includePlanned));
+    assert(found.some(p=>p.join('/')==='local:god/local:forge/local:patch'));
+    assert(found.some(p=>p.join('/')==='local:god/local:qa/local:patch'));
+    assert(!found.some(p=>p.includes('planned:ahnaf:Aurora')));
+  }
+});
+test('All agents retains placeholder ancestors but omits unrelated empty positions', () => {
+  const members=buildTeamMembers([local('god','Michael-B'),local('core','Core')],[]);
+  const tree=buildTeamTree(members,'',false);
+  assert(paths(tree).some(p=>p.join('/')==='local:god/planned:turjo:Forge/local:core'));
+  assert(!paths(tree).some(p=>p.includes('planned:turjo:Atlas')));
+});
+test('missing/invalid assignments stay visible; both office sides keep workers under their own managers', () => {
+  const peers=[{id:'brother',name:'Ahnaf',agents:[{id:'god',name:'Michael-A',character:'michael',status:'working'},{id:'aurora',name:'Aurora',character:'pam',status:'idle'},{id:'pixel',name:'Pixel',character:'jim',status:'idle'}]}];
+  const members=buildTeamMembers([...roster,local('orphan','Custom worker',{organization:{side:'turjo',role:'worker',reportsTo:['missing'],tags:[]}})],peers);
+  const tree=buildTeamTree(members,'',false),found=paths(tree);
+  assert(tree.some(b=>b.member.key==='local:orphan'));
+  assert(found.some(p=>p.join('/')==='remote:brother:god/remote:brother:aurora/remote:brother:pixel'));
+  assert(found.some(p=>p.join('/')==='local:god/local:forge/local:patch'));
+  assert.equal(buildTeamTree(members,'no-such-agent',false).length,0);
+});

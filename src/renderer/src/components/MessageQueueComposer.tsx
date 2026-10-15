@@ -192,6 +192,16 @@ export function MessageQueueComposer({ agent, workspace = false }: MessageQueueC
     ? t('queueComposer.heldPicker', { name: agent.name })
     : block === 'exited'
     ? t('queueComposer.heldExited', { name: agent.name })
+    : block === 'permission'
+    ? t('queueComposer.heldPermission', { defaultValue: 'Waiting for your terminal approval' })
+    : block === 'feedback'
+    ? t('queueComposer.heldFeedback', { defaultValue: 'Answer or skip the CLI feedback prompt' })
+    : block === 'quota'
+    ? t('queueComposer.heldQuota', { defaultValue: 'Model quota reached — choose a model or retry after reset' })
+    : block === 'model-choice'
+    ? t('queueComposer.heldModelChoice', { defaultValue: 'Choose whether to keep or change the model in the terminal' })
+    : block === 'working'
+    ? t('queueComposer.heldWorking', { defaultValue: 'Waiting for the current turn to finish' })
     : !idle
     ? t('queueComposer.busyQueued', { name: agent.name, count: queue.length })
     : deliveryPaused && !queue[0]?.manual

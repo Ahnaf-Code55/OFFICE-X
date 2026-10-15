@@ -1,3 +1,4 @@
+import type { ChatWireBody } from '../shared/officeRooms';
 import type { TeamMessage } from '../shared/teamProtocol';
 import type { TriggerMode } from '../shared/triggers';
 import {
@@ -14,7 +15,7 @@ export type TeamDispatchOutcome =
   | { type: 'agent-prompt'; decision: 'auto-allowed'; agentId: string; prompt: string }
   | { type: 'terminal-input'; decision: 'auto-allowed'; agentId: string; input: string }
   | { type: 'terminal-stream'; decision: 'auto-allowed'; agentId: string; output: string; sequence: number; streamId: string; gap: boolean }
-  | { type: 'chat'; decision: 'auto-allowed'; channel: 'leadership' | 'managers' | 'everyone'; text: string; image: string; authorKind: 'human' | 'agent'; authorName: string }
+  | ({ type: 'chat'; decision: 'auto-allowed' } & ChatWireBody)
   | ({ type: 'rtc-signal'; decision: 'auto-allowed' } & RtcSignal);
 
 export interface TeamDispatchInput {

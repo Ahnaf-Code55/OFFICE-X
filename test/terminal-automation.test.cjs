@@ -7,6 +7,7 @@ const loadTs = require('./load-ts.cjs');
 const {
   canAutomateTerminal,
   hasNativePermissionPrompt,
+  nativeTerminalPrompt,
   isStaleTerminalDraft,
   opensInteractiveTerminalUi,
   shouldFollowTerminalOutput,
@@ -22,6 +23,22 @@ test('first-run folder trust and tool approvals stop automated Enter before hook
   assert.equal(hasNativePermissionPrompt('Would you like to run the following command?\n  $ rm file'), true);
   assert.equal(hasNativePermissionPrompt('• I reviewed the permissions.\n› Ask Codex to do anything'), false);
   assert.equal(hasNativePermissionPrompt('The documentation explains "Trust this folder?" in the CLI.'), false);
+});
+
+test('an active Antigravity quota error holds automatic retries but old errors do not', () => {
+  const error = '⚠ Individual quota reached. Please upgrade your subscription to increase your limits. Resets in\n4h21m20s.\nError ID: quota-test-5\n\n──────────────────\n>\n──────────────────\n? for shortcuts       Claude Sonnet 5.5 · medium\n';
+  assert.equal(nativeTerminalPrompt(error), 'quota');
+  const ready = { exited: false, pickerOpen: false, inputDirty: false, settleUntil: 0 };
+  assert.equal(canAutomateTerminal({ ...ready, nativePrompt: nativeTerminalPrompt(error) }, 1e12), false);
+  assert.equal(nativeTerminalPrompt(error + '\n● Read file\nNew answer succeeded.\n>'), null);
+  assert.equal(nativeTerminalPrompt('The documentation says "Individual quota reached" means wait.'), null);
+});
+
+test('the Codex rate-limit model choice belongs to the human, never queued Enter', () => {
+  const screen = 'Approaching rate limits\nSwitch to gpt-6-luna for lower credit usage?\n› 1. Switch to gpt-6-luna\n  2. Keep current model\n  3. Keep current model (never show again)\n\nenter select · esc back';
+  assert.equal(nativeTerminalPrompt(screen), 'model-choice');
+  assert.equal(canAutomateTerminal({ exited: false, pickerOpen: false, inputDirty: false, settleUntil: 0, nativePrompt: nativeTerminalPrompt(screen) }), false);
+  assert.equal(nativeTerminalPrompt('I kept the current model after an approaching rate limits warning.'), null);
 });
 
 test('interactive provider commands pause queue automation', () => {
@@ -128,4 +145,39 @@ test('terminal output follows only when already at the bottom', () => {
   assert.equal(shouldFollowTerminalOutput(100, 100), true);
   assert.equal(shouldFollowTerminalOutput(99, 100), true);
   assert.equal(shouldFollowTerminalOutput(80, 100), false);
+});
+
+test('Antigravity file approvals hold automated delivery instead of selecting the default Yes', () => {
+  const screen = 'Create file\n/home/office/mood.md\n  1 + waiting\n\nAllow creation of this file?\n> 1. Yes, allow creation\n  2. No, deny creation\n\n  ↑/↓ Navigate · tab Amend · f full diff\nesc to cancel';
+  assert.equal(hasNativePermissionPrompt(screen), true);
+  assert.equal(hasNativePermissionPrompt('Allow editing of this file?\n> 1. Yes, allow edit\n  2. No'), true);
+  assert.equal(hasNativePermissionPrompt('Allow execution of this command?\n> 1. Yes\n  2. No'), true);
+  assert.equal(hasNativePermissionPrompt('The docs explain "Allow creation of this file?" as a confirmation.'), false);
+  assert.equal(hasNativePermissionPrompt('File created successfully.\n>'), false);
+});
+
+test('Antigravity run-command approval and its optional survey hold work without pretending both are permissions', () => {
+  assert.equal(nativeTerminalPrompt('Requesting permission for:\n  python3 -c ...\nRun this command?\n> 1. Yes, run command\n  4. No, cancel'), 'permission');
+  const feedback="How's the CLI experience so far? Help us improve:\n [1] Good  [2] Fine  [3] Bad  [0] Skip";
+  assert.equal(nativeTerminalPrompt(feedback), 'feedback');
+  assert.equal(nativeTerminalPrompt('The CLI experience is fine.\n>'), null);
+  const ready={exited:false,pickerOpen:false,inputDirty:false,settleUntil:0};
+  for(const nativePrompt of ['permission','feedback']) {
+    assert.equal(canAutomateTerminal({...ready,nativePrompt},1e12),false);
+    assert.equal(terminalAutomationBlock({...ready,nativePrompt},1e12),nativePrompt);
+  }
+  assert.equal(canAutomateTerminal({...ready,nativePrompt:null},100),true);
+});
+
+test('a live Antigravity thinking spinner owns input until its cancel footer clears', () => {
+  const {nativeTerminalBusy}=loadTs('src/renderer/src/components/terminalAutomation.ts');
+  const thinking='⣷  Considering the cloud deployment...\n>\nesc to cancel  Gemini 3.8 Flash';
+  assert.equal(nativeTerminalBusy(thinking),true);
+  assert.equal(nativeTerminalBusy('○ Thought for 9.4s\nDone.\n>\n? for shortcuts Gemini 3.8 Flash'),false);
+  assert.equal(nativeTerminalBusy('Documentation: ⣷ means thinking.\n>'),false);
+  assert.equal(nativeTerminalBusy('⣷ Earlier work\nAllow creation of this file?\n> 1. Yes\nesc to cancel'),false);
+  const ready={exited:false,pickerOpen:false,inputDirty:false,settleUntil:0};
+  assert.equal(canAutomateTerminal({...ready,nativeBusy:true},100),false);
+  assert.equal(terminalAutomationBlock({...ready,nativeBusy:true},100),'working');
+  assert.equal(canAutomateTerminal({...ready,nativeBusy:false},100),true);
 });

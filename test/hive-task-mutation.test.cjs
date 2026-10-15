@@ -129,3 +129,29 @@ test('webhook dispatch appends via atomic addTask, not a stale whole-ledger rewr
   assert.doesNotMatch(fn, /writeTasks\s*\(\[\s*\.\.\.existing/,
     'dispatchWebhookWork must not rebuild a stale whole-ledger snapshot');
 });
+
+test('stale human answers and dismissals cannot erase a newly appended or replaced question', (t) => {
+  const hive = floor(t);
+  const original = { q: 'Choose a mode', askedAt: '2026-10-15T00:00:00Z' };
+  hive.writeTasks([card('question', { status: 'blocked', humanQA: [original] })]);
+  const stale = structuredClone(tasks(hive)[0].humanQA);
+  const newer = { q: 'Approve the new scope?', askedAt: '2026-10-15T00:01:00Z' };
+  hive.patchTask('question', { humanQA: [original, newer] });
+  for (const update of [{ a: 'Old answer' }, { dismissedAt: '2026-10-15T00:02:00Z' }]) {
+    assert.equal(hive.patchTask('question', { humanQA: [{ ...original, ...update }] }, stale), false);
+    assert.deepEqual(tasks(hive)[0].humanQA, [original, newer]);
+  }
+  hive.patchTask('question', { humanQA: [{ ...original, askedAt: newer.askedAt }] });
+  assert.equal(hive.patchTask('question', { humanQA: [{ ...original, a: 'Wrong occurrence' }] }, stale), false);
+});
+
+test('guarded human answer preserves concurrent task fields and refuses a second answer', (t) => {
+  const hive = floor(t);
+  const original = { q: 'Which option?', askedAt: '2026-10-15T00:00:00Z' };
+  hive.writeTasks([card('question', { status: 'blocked', humanQA: [original] })]);
+  hive.patchTask('question', { description: 'New manager evidence' });
+  assert.equal(hive.patchTask('question', { humanQA: [{ ...original, a: 'Option B' }] }, [original]), true);
+  assert.equal(tasks(hive)[0].description, 'New manager evidence');
+  assert.equal(hive.patchTask('question', { humanQA: [{ ...original, a: 'Duplicate stale answer' }] }, [original]), false);
+  assert.equal(tasks(hive)[0].humanQA[0].a, 'Option B');
+});

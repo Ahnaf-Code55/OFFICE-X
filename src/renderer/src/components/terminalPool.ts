@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
+import { INITIAL_TERMINAL_SIZE } from '@shared/terminalGeometry';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
@@ -33,7 +34,8 @@ import {
 } from './terminalRecovery';
 import {
   canAutomateTerminal,
-  hasNativePermissionPrompt,
+  nativeTerminalPrompt,
+  nativeTerminalBusy,
   opensInteractiveTerminalUi,
   shouldFollowTerminalOutput,
   terminalAutomationBlock,
@@ -130,6 +132,7 @@ export function acquireTerminal(ptyId: string, theme?: ThemeMap, fontSize = 14):
   host.style.height = '100%';
 
   const term = new Terminal({
+    ...INITIAL_TERMINAL_SIZE,
     theme,
     // v0.3.4: JetBrains Mono replaces VT323 — the narrow CRT face strained at
     // data density. lineHeight stays 1.0 so TUI box-drawing rows stay joined.
@@ -405,18 +408,30 @@ export function acquireTerminal(ptyId: string, theme?: ThemeMap, fontSize = 14):
 export function isTerminalAutomationSafe(ptyId: string, now = Date.now()): boolean {
   const entry = pool.get(ptyId);
   if (!entry) return true;
-  return !hasTerminalPermissionPrompt(ptyId) && canAutomateTerminal(automationStateOf(entry, now), now);
+  return canAutomateTerminal(automationStateOf(entry, now), now);
 }
 
 export function hasTerminalPermissionPrompt(ptyId: string): boolean {
+  return nativeTerminalPromptFor(ptyId) === 'permission';
+}
+
+function terminalScreen(ptyId: string): string {
   const entry = pool.get(ptyId);
-  if (!entry || entry.exited) return false;
+  if (!entry || entry.exited) return "";
   const buffer = entry.term.buffer.active;
   const lines: string[] = [];
   for (let i = buffer.baseY; i < buffer.baseY + entry.term.rows; i++) {
     lines.push(buffer.getLine(i)?.translateToString(true) ?? '');
   }
-  return hasNativePermissionPrompt(lines.join('\n'));
+  return lines.join('\n');
+}
+
+export function nativeTerminalPromptFor(ptyId: string) {
+  return nativeTerminalPrompt(terminalScreen(ptyId));
+}
+
+export function nativeTerminalBusyFor(ptyId: string): boolean {
+  return nativeTerminalBusy(terminalScreen(ptyId));
 }
 
 /** Characters a TUI paints around its input line that are not the user's text:
@@ -501,6 +516,8 @@ function automationStateOf(entry: TerminalEntry, now = Date.now()) {
   const inputDirty = entry.inputDirty && promptLineHasText(entry, now) !== false;
   return {
     exited: entry.exited,
+    nativePrompt: nativeTerminalPromptFor(entry.ptyId),
+    nativeBusy: nativeTerminalBusyFor(entry.ptyId),
     pickerOpen: entry.automationBlocked,
     pickerOpenedAt: entry.automationBlocked ? entry.automationBlockedAt : undefined,
     inputDirty,

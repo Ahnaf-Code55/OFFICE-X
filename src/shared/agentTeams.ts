@@ -82,15 +82,21 @@ export function buildTeamMembers(agents: readonly LocalTeamAgent[], peers: TeamP
     members.push(member);
     pending.push({ member, parents: org?.reportsTo ?? chart?.parents ?? [], cohort: 'local', explicit: !!org });
   }
-  for (const peer of peers) for (const a of peer.agents) {
-    const chart = chartFor(a.name);
-    const member: TeamMember = {
-      key: `remote:${peer.id}:${a.id}`, name: a.name, side: chart?.side ?? 'unassigned',
-      role: chart?.role ?? 'worker', title: chart?.title ?? 'Role not shared', tags: [], parentKeys: [],
-      status: a.status, source: 'remote', peer: peer.name, character: a.character
-    };
-    members.push(member);
-    pending.push({ member, parents: chart?.parents ?? [], cohort: `remote:${peer.id}`, explicit: false });
+  for (const peer of peers) {
+    const knownSides = new Set(peer.agents.flatMap(a => chartFor(a.name) ? [chartFor(a.name)!.side] : []));
+    const peerSide = knownSides.size === 1 ? [...knownSides][0] : 'unassigned';
+    for (const a of peer.agents) {
+      const chart = chartFor(a.name);
+      const tier = (a as { chatTier?: string }).chatTier;
+      const sharedRole = tier === 'leadership' ? 'orchestrator' : tier === 'middle' ? 'manager' : tier === 'staff' ? 'worker' : undefined;
+      const member: TeamMember = {
+        key: `remote:${peer.id}:${a.id}`, name: a.name, side: chart?.side ?? peerSide,
+        role: sharedRole ?? chart?.role ?? 'worker', title: chart?.title ?? (sharedRole === 'orchestrator' ? 'Office coordination' : 'Role not shared'), tags: [], parentKeys: [],
+        status: a.status, source: 'remote', peer: peer.name, character: a.character
+      };
+      members.push(member);
+      pending.push({ member, parents: chart?.parents ?? [], cohort: `remote:${peer.id}`, explicit: false });
+    }
   }
   // The company preset is activated by a known coordinator, not by every generic office.
   if (members.some(m => m.name === 'Michael-A' || m.name === 'Michael-B')) {
@@ -112,6 +118,8 @@ export function buildTeamMembers(agents: readonly LocalTeamAgent[], peers: TeamP
         ? members.find(m => m.key === `local:${parent}`)
         : members.find(m => m.side === member.side && m.name.toLowerCase() === parent.toLowerCase()
           && (cohort === 'local' ? m.source === 'local' : cohort === 'planned' ? true : m.key.startsWith(`${cohort}:`)))
+          ?? (cohort.startsWith('remote:') && chartFor(parent)?.role === 'orchestrator'
+            ? members.find(m => m.side === member.side && m.role === 'orchestrator' && m.key.startsWith(`${cohort}:`)) : undefined)
           ?? members.find(m => m.side === member.side && m.name.toLowerCase() === parent.toLowerCase() && m.source === 'planned');
       // Strict levels make malformed saved relationships cycle-free. Orphans remain visible.
       if (match && match.side === member.side && rank[match.role] < rank[member.role] && !member.parentKeys.includes(match.key)) member.parentKeys.push(match.key);
@@ -129,4 +137,28 @@ export function matchingTeamKeys(members: readonly TeamMember[], query: string, 
   const visit = (key: string) => { for (const parent of byKey.get(key)?.parentKeys ?? []) if (!keys.has(parent)) { keys.add(parent); visit(parent); } };
   for (const key of [...keys]) visit(key);
   return keys;
+}
+
+export interface TeamBranch { member: TeamMember; children: TeamBranch[] }
+
+/** Both drawer views retain reporting paths. All agents hides unfilled chart
+ * positions, but keeps any placeholder needed to identify an employee's manager. */
+export function buildTeamTree(members: readonly TeamMember[], query: string, includePlanned = true): TeamBranch[] {
+  const candidates = includePlanned ? members : members.filter(m => m.source !== 'planned');
+  const matches = matchingTeamKeys(candidates, query);
+  const visible = new Set(matches);
+  const byKey = new Map(members.map(m => [m.key, m]));
+  const includeParents = (key: string) => {
+    for (const parent of byKey.get(key)?.parentKeys ?? []) if (!visible.has(parent)) {
+      visible.add(parent);
+      includeParents(parent);
+    }
+  };
+  for (const key of matches) includeParents(key);
+  const shown = members.filter(m => visible.has(m.key));
+  const branch = (member: TeamMember): TeamBranch => ({
+    member,
+    children: shown.filter(child => child.parentKeys.includes(member.key)).map(branch)
+  });
+  return shown.filter(m => !m.parentKeys.some(key => visible.has(key) && byKey.has(key))).map(branch);
 }

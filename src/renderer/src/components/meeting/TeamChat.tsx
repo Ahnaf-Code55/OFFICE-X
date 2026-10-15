@@ -1,23 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/store/store';
 import { PixelButton } from '../PixelButton';
-import { getRemotePresence } from '@/scene/office/remotePresence';
+import { RoomTabs, RoomControls, RoomParticipants, useOfficeRooms } from './OfficeRooms';
+import { isRoomRequestPending } from '../../../../shared/officeRooms';
 
 type ChatView = Awaited<ReturnType<typeof window.cth.listChat>>[number];
 type Channel = ChatView['channel'];
-type Tier = Parameters<typeof window.cth.setChatTier>[1];
-
-const CHANNELS: { key: Channel; label: string }[] = [
-  { key: 'leadership', label: 'Leadership' },
-  { key: 'managers', label: 'Managers' },
-  { key: 'everyone', label: 'Everyone' }
-];
-const TIERS: { key: Tier; label: string }[] = [
-  { key: 'off', label: 'Not in chat' },
-  { key: 'staff', label: 'Employee' },
-  { key: 'middle', label: 'Manager' },
-  { key: 'leadership', label: 'Leadership' }
-];
 
 /** Must stay under MAX_CHAT_IMAGE_CHARS in src/main/teamActions.ts. */
 const MAX_IMAGE_CHARS = 150_000;
@@ -41,7 +29,19 @@ async function toChatImage(file: Blob): Promise<string> {
 /** Route team-chat prompts into agent queues. Mounted once at App level so AIs
  *  hear the room even while the chat tab is closed. */
 export function useChatAgentPrompts(): void {
-  useEffect(() => window.cth.onChatAgentPrompt(({ agentId, text }) => useStore.getState().enqueueMessage(agentId, text)), []);
+  useEffect(() => {
+    const reconcile = (rooms: Awaited<ReturnType<typeof window.cth.getChatRooms>>) => {
+      const s=useStore.getState();
+      for(const [agentId,queue] of Object.entries(s.messageQueues)) for(const message of queue){
+        const request=message.chatRequest;if(!request)continue;
+        if (!isRoomRequestPending(rooms, agentId, request)) s.removeQueuedMessage(agentId,message.id);
+      }
+    };
+    let alive=true;void window.cth.getChatRooms().then(rooms=>{if(alive)reconcile(rooms)});
+    const offRooms=window.cth.onChatRooms(reconcile);
+    const offPrompts=window.cth.onChatAgentPrompt(({agentId,text,instruction,request})=>useStore.getState().enqueueMessage(agentId,text,{instruction,chatRequest:request}));
+    return()=>{alive=false;offRooms();offPrompts()};
+  }, []);
 }
 
 const field: React.CSSProperties = {
@@ -54,8 +54,9 @@ export function TeamChat() {
   const agents = useStore((state) => state.agents);
   const [messages, setMessages] = useState<ChatView[]>([]);
   const [channel, setChannel] = useState<Channel>('everyone');
-  const [tiers, setTiers] = useState<Record<string, Tier>>({});
-  const [showRanks, setShowRanks] = useState(false);
+  const office = useOfficeRooms();
+  const participants = office.participants(channel);
+  const room = office.rooms.find(r=>r.channel===channel);
   const [text, setText] = useState('');
   const [image, setImage] = useState('');
   const [error, setError] = useState('');
@@ -64,7 +65,6 @@ export function TeamChat() {
 
   useEffect(() => {
     void window.cth.listChat().then(setMessages);
-    void window.cth.getChatTiers().then(setTiers);
     return window.cth.onChatMessage((message) => setMessages((prev) => [...prev, message].slice(-100)));
   }, []);
 
@@ -84,39 +84,17 @@ export function TeamChat() {
     if (result.ok) { setText(''); setImage(''); setError(''); } else setError(result.error ?? 'could not send');
   };
 
-  const setTier = (id: string, tier: Tier) => {
-    setTiers((prev) => ({ ...prev, [id]: tier }));
-    void window.cth.setChatTier(id, tier);
-  };
   const byName = new Map(agents.map((a) => [a.name, a]));
   // @mention picker: my agents plus teammates' agents, filtered by what follows the '@'.
   const partial = /@([\w-]*)$/.exec(text)?.[1];
-  const mentionable = [...new Set([...agents.map((a) => a.name), ...getRemotePresence().flatMap((p) => p.agents.map((a) => a.name))])];
+  const mentionable = [...new Set(participants.map(p=>p.name))];
   const suggestions = partial === undefined ? [] : mentionable.filter((n) => n.toLowerCase().startsWith(partial.toLowerCase())).slice(0, 6);
   const pickMention = (name: string) => setText(text.replace(/@[\w-]*$/, `@${name} `));
 
   return <section aria-label="Team chat" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--cth-cream-50)', color: 'var(--cth-ink-900)', fontFamily: 'var(--cth-font-ui)', fontSize: 13 }}>
-    <div role="tablist" style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '2px solid var(--cth-ink-100)' }}>
-      {CHANNELS.map((c) => <button key={c.key} type="button" role="tab" aria-selected={channel === c.key} onClick={() => setChannel(c.key)}
-        style={{ flex: 1, padding: '3px 6px', border: 0, cursor: 'pointer', fontFamily: 'var(--cth-font-mono)', fontSize: 12,
-          background: channel === c.key ? 'var(--cth-lemon)' : 'var(--cth-cream-200)', color: channel === c.key ? 'var(--cth-on-accent)' : 'var(--cth-ink-900)',
-          boxShadow: `inset 0 0 0 1px var(${channel === c.key ? '--cth-ink-300' : '--cth-ink-100'})` }}>#{c.label}</button>)}
-    </div>
-    <div style={{ padding: '4px 10px', borderBottom: '1px solid var(--cth-ink-100)' }}>
-      <button type="button" onClick={() => setShowRanks((v) => !v)} aria-expanded={showRanks}
-        style={{ background: 'none', border: 0, padding: 0, color: 'var(--cth-ink-500)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--cth-font-mono)' }}>
-        {showRanks ? '▾' : '▸'} who's in chat ({agents.filter((a) => (tiers[a.id] ?? 'off') !== 'off').length} AIs)
-      </button>
-      {showRanks && <div style={{ display: 'grid', gap: 4, padding: '6px 0' }}>
-        {agents.length ? agents.map((agent) => <label key={agent.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</span>
-          <select value={tiers[agent.id] ?? 'off'} onChange={(e) => setTier(agent.id, e.target.value as Tier)} style={{ ...field, padding: '2px 4px' }}>
-            {TIERS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-          </select>
-        </label>) : <span style={{ color: 'var(--cth-ink-500)' }}>no agents yet</span>}
-        <span style={{ color: 'var(--cth-ink-500)', fontSize: 11 }}>Leadership hears every channel, managers hear #Managers and #Everyone, employees hear #Everyone.</span>
-      </div>}
-    </div>
+    <RoomTabs channel={channel} onChange={setChannel} />
+    <RoomControls channel={channel} state={room} topic={text} image={image} onPosted={intent=>{if(intent==='report'){setText('');setImage('')}}} onError={setError} />
+    <RoomParticipants people={participants} />
     <div ref={listRef} onScroll={(e) => { const el = e.currentTarget; atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }} style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'grid', gap: 10, alignContent: 'start' }}>
       {messages.filter((m) => m.channel === channel).map((m) => {
         const agent = m.authorKind === 'agent' ? byName.get(m.authorName) : undefined;

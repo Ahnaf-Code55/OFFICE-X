@@ -34,12 +34,11 @@ test('nudges an idle worker with undrained inbox mail', () => {
   assert.deepEqual(out, ['alice']);
 });
 
-test('never nudges god, archived agents, or agents without a live pty', () => {
+test('never nudges agents without a live pty', () => {
   const w = new WorkerWakeWatchdog();
   w.noteSpawn('p1', 0);
   const now = 200_000;
   const out = w.decide([
-    fact({ agentId: 'god', isGod: true, ptyId: 'p1' }),
     fact({ agentId: 'gone', archived: true, ptyId: undefined }),
     fact({ agentId: 'no-pty', ptyId: undefined })
   ], now);
@@ -193,4 +192,24 @@ test('the nudge text matches the renderer guardrail exactly', () => {
   // If the renderer's nudge wording ever changes, update WORKER_WAKE_NUDGE to match.
   assert.equal(WORKER_WAKE_NUDGE.length > 100, true);
   assert.match(WORKER_WAKE_NUDGE, /read your inbox/i);
+});
+
+test('an orchestrator with pending mail is woken without relying on optional heartbeats',()=>{
+ const w=new WorkerWakeWatchdog(),now=200000;
+ const god=fact({agentId:'god',isGod:true,ptyId:'pty-god'});
+ assert.deepEqual(w.decide([god],now),['god']);
+ assert.deepEqual(w.decide([god],now+WORKER_WAKE_COOLDOWN_MS+1),[]);
+ assert.deepEqual(w.decide([{...god,inboxIds:[]}],now+2*WORKER_WAKE_COOLDOWN_MS),[]);
+});
+
+test('the main watchdog queues wakeups through terminal safety instead of typing approval keys',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const main=fs.readFileSync(path.join(__dirname,'../src/main/index.ts'),'utf8');
+ const fn=main.slice(main.indexOf('function nudgeWorker('),main.indexOf('/** Main-process inbox-wake beat'));
+ assert.match(fn,/hive:enqueueToAgent/);
+ assert.doesNotMatch(fn,/ptyManager\.write/);
+ const renderer=fs.readFileSync(path.join(__dirname,'../src/renderer/src/hooks/useHive.ts'),'utf8');
+ const listener=renderer.slice(renderer.indexOf('return window.cth.onHiveEnqueue'),renderer.indexOf('// 5b) MAIN-initiated'));
+ assert.match(listener,/isInboxNudge/);
+ assert.match(listener,/inbox-nonempty/);
 });

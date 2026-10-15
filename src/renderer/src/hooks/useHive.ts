@@ -1,3 +1,4 @@
+import { INITIAL_TERMINAL_SIZE } from '@shared/terminalGeometry';
 import { useEffect, useRef } from 'react';
 import { withStandingGoal } from '@shared/standingGoal';
 import { useStore, type Agent, type QueuedMessage, type StationKind, type ToolKind } from '@/store/store';
@@ -20,10 +21,11 @@ import { AUTO_COMPACT_TOKENS } from '../../../shared/autoCompact';
 import type { AgentProvider } from '../../../shared/agentProvider';
 import { bridgeOf, providerPreset } from '../../../shared/agentProvider';
 import { isDurableRole, preferredAgentRole, roleForHiveSpawn } from '../../../shared/agentRole';
-import { inboxNudgeText } from '../../../shared/hiveNudge';
+import { terminalWorkOrderPrompt } from '../../../shared/hiveReply';
+import { inboxNudgeText, isInboxNudge } from '../../../shared/hiveNudge';
 import { resolveGodName } from '../../../shared/godIdentity';
 import { notificationNeedsHuman } from '../../../shared/hookEvents';
-import { acquireTerminal, resetTerminal, isTerminalAutomationSafe, hasTerminalPermissionPrompt } from '@/components/terminalPool';
+import { acquireTerminal, resetTerminal, isTerminalAutomationSafe, nativeTerminalPromptFor, nativeTerminalBusyFor } from '@/components/terminalPool';
 import { canDeliverToAgent, deliverWithAcknowledgement, checkPrecondition } from './queueDelivery';
 import { OFFICE_CAST, DEFAULT_CHARACTER } from '@/scene/office/cast';
 
@@ -112,11 +114,13 @@ function submitToPty(
   ptyId: string,
   text: string,
   provider: AgentProvider,
-  settleMs = 250
+  settleMs = 250,
+  canSubmit?: () => Promise<boolean>
 ): Promise<void> {
   const prev = writeChains.get(ptyId) ?? Promise.resolve();
   const next = prev.catch(() => { /* a failed prior write must not stall the chain */ }).then(async () => {
     await waitForTerminalReady(ptyId, provider);
+    if (canSubmit && !await canSubmit()) throw new Error('Discussion invitation is no longer current.');
     if (!isTerminalAutomationSafe(ptyId)) throw new Error('Terminal input is waiting for the human.');
     // Bracketed paste (ESC[200~ … ESC[201~) only matters for MULTI-LINE text, so a
     // stray "\n" doesn't submit early (#24). Single-line text (nudges, slash
@@ -135,7 +139,10 @@ function submitToPty(
     const wrote = await window.cth.writePty(ptyId, payload);
     if (!wrote?.ok) throw new Error(wrote?.error ?? `pty write failed: ${ptyId}`);
     await new Promise((r) => setTimeout(r, codex ? 400 : 140));
-    if (hasTerminalPermissionPrompt(ptyId)) throw new Error('A permission prompt appeared before submit.');
+    if (nativeTerminalPromptFor(ptyId) || nativeTerminalBusyFor(ptyId)) throw new Error('The terminal became busy before submit.');
+    // A stopped room must not submit a prompt that was pasted just before stop.
+    // Leave the unsent draft intact: automation never erases terminal input.
+    if (canSubmit && !await canSubmit()) throw new Error('Discussion invitation is no longer current.');
     const submitted = await window.cth.writePty(ptyId, '\r');
     if (!submitted?.ok) throw new Error(submitted?.error ?? `pty write failed: ${ptyId}`);
     await new Promise((r) => setTimeout(r, settleMs));
@@ -152,32 +159,6 @@ function enrichTaskPrompt(text: string): string {
     '',
     '(Identify the relevant project, cd in, gather READ-ONLY context, then send the improved,',
     'self-contained prompt to Michael via an outbox message with "to":"god". Do not do the task yourself.)'
-  ].join('\n');
-}
-
-function terminalWorkOrderPrompt(msg: {
-  id: string;
-  from: string;
-  act: string;
-  subject: string;
-  body: string;
-  requiresReply: boolean;
-  createdAt: string;
-}): string {
-  return [
-    'WORK ORDER FROM HIVE',
-    `Message: ${msg.id}`,
-    `From: ${msg.from}`,
-    `Subject: ${msg.subject}`,
-    `Act: ${msg.act}${msg.requiresReply ? ' (reply expected)' : ''}`,
-    `Issued: ${msg.createdAt}`,
-    '',
-    msg.body,
-    '',
-    'Notes:',
-    '- This arrived through your terminal because this provider does not support hive inbox.',
-    '- Work in your current cwd.',
-    '- When done, report changes, validation, blockers, and next step in this terminal.'
   ].join('\n');
 }
 
@@ -399,8 +380,7 @@ export function useHive(config: HarnessConfig | null): void {
         command: exe,
         provider: godProvider,
         args,
-        cols: 100,
-        rows: 30,
+        ...INITIAL_TERMINAL_SIZE,
         // Restore Michael's prior conversation across an app restart. His session
         // id lives in the hive registry (recorded from his hooks), so the main
         // process attaches `--resume <id>`; a missing transcript falls back to a
@@ -641,14 +621,26 @@ export function useHive(config: HarnessConfig | null): void {
       const { agents, updateAgent } = useStore.getState();
       for (const a of agents) {
         if (!a.ptyId) continue;
-        if (hasTerminalPermissionPrompt(a.ptyId)) {
-          if (a.action !== 'permission prompt in terminal') updateAgent(a.id, {
-            status: 'blocked', action: 'permission prompt in terminal',
-            blockReason: { summary: 'Permission required', detail: 'Open this agent’s terminal to review its folder trust or tool request. Automatic messages are paused until you decide.', actions: [] }
+        const nativePrompt = nativeTerminalPromptFor(a.ptyId);
+        if (nativePrompt) {
+          const action = `${nativePrompt} prompt in terminal`;
+          if (a.action !== action || a.status !== 'blocked') updateAgent(a.id, {
+            status: 'blocked', action,
+            blockReason: {
+              summary: nativePrompt === 'permission' ? 'Permission required' : nativePrompt === 'quota' ? 'Model quota reached' : nativePrompt === 'model-choice' ? 'Model choice required' : 'CLI feedback prompt',
+              detail: nativePrompt === 'permission' ? 'Open this agent’s terminal to review its folder trust or tool request. Automatic messages are paused until you decide.' : nativePrompt === 'quota' ? 'The provider has reached this model’s quota. Automatic messages are held. Review the reset time in the terminal, then retry there or choose an available model.' : nativePrompt === 'model-choice' ? 'Codex is offering a model change because credits are low. Open the terminal to keep or change the model. Automatic messages wait for your choice.' : 'The CLI is waiting for a feedback choice. Open its terminal to answer or skip the survey before sending work.',
+              actions: []
+            }
           });
           continue;
         }
-        if (a.action === 'permission prompt in terminal') {
+        if (nativeTerminalBusyFor(a.ptyId)) {
+          if (a.status !== 'working' && a.status !== 'thinking' && !['constrained', 'stopped'].includes(breakerLevel.current[a.id])) {
+            updateAgent(a.id, { status: 'thinking', action: 'thinking in terminal', blockReason: undefined });
+          }
+          continue;
+        }
+        if (a.action === 'permission prompt in terminal' || a.action === 'feedback prompt in terminal' || a.action === 'quota prompt in terminal' || a.action === 'model-choice prompt in terminal' || a.action === 'thinking in terminal') {
           updateAgent(a.id, { status: 'idle', action: 'idle', blockReason: undefined });
           continue;
         }
@@ -826,6 +818,10 @@ export function useHive(config: HarnessConfig | null): void {
         removeQueuedMessage(srcId, next.id);
         return { sent: false };
       }
+      if (next.chatRequest && (Date.now() >= next.chatRequest.expiresAt || !await window.cth.canDeliverChat(srcId, next.chatRequest.id, next.chatRequest.channel))) {
+        removeQueuedMessage(srcId, next.id);
+        return {sent:false};
+      }
       const flightKey = `${srcId}:${next.id}`;
       if (inFlight.has(flightKey)) return { sent: false };
       inFlight.add(flightKey);
@@ -840,7 +836,10 @@ export function useHive(config: HarnessConfig | null): void {
               target,
               wrap ? wrap(next) : (next.instruction ?? next.text)
             ),
-            inferAgentProvider(target.command, target.provider)
+            inferAgentProvider(target.command, target.provider),
+            250,
+            next.chatRequest ? async () => Date.now() < next.chatRequest!.expiresAt
+              && await window.cth.canDeliverChat(srcId, next.chatRequest!.id, next.chatRequest!.channel) : undefined
           ),
           () => {
             removeQueuedMessage(srcId, next.id);
@@ -1013,7 +1012,8 @@ export function useHive(config: HarnessConfig | null): void {
     if (!config?.onboardingComplete) return;
     return window.cth.onHiveEnqueue?.((msg) => {
       if (!msg?.targetId || !msg?.text?.trim()) return;
-      useStore.getState().enqueueMessage(msg.targetId, msg.text.trim());
+      useStore.getState().enqueueMessage(msg.targetId, msg.text.trim(),
+        isInboxNudge(msg.text) ? { precondition: 'inbox-nonempty' } : undefined);
     });
   }, [config?.onboardingComplete]);
 
